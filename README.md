@@ -7,7 +7,7 @@ This README would normally document whatever steps are necessary to get your app
 * Chongyang Zhang
 * Han Deul Son
 * Ishan Sahni
-* 
+* Qingna Li
 * Yile Gan
 
 ### What is this repository for? ###
