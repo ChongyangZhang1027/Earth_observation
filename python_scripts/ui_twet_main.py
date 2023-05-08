@@ -7,28 +7,17 @@
 #
 # WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
-from PyQt5.QtWidgets import QMainWindow
-from MainWindow import Ui_MainWindow
-from PyQt5 import QtWidgets
 import sys
 
+from PyQt5.QtWidgets import QApplication
+from MainWindow import MainWindow
 
-class Window(QMainWindow, Ui_MainWindow):
-    def __init__(self):
-        super().__init__()
-        print("initialize")
-        self.setupUi(self)
-
-    def setup_ui(self):
-        pass
-
-    def binding(self):
-        pass
-
-
-app = QtWidgets.QApplication(sys.argv)
-window = Window()
-ui = Ui_MainWindow()
-ui.setupUi(window)
-window.show()
-sys.exit(app.exec_())
+if __name__ == '__main__':
+    # 建立主窗口
+    app = QApplication(sys.argv)
+    win = MainWindow()
+    # 开启数据监听多线程
+    # thread_01 = Thread(target=win.data_receive)
+    # thread_01.start()
+    # 退出
+    app.exit(app.exec_())
