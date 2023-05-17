@@ -1,4 +1,3 @@
-
 import folium
 from folium.plugins import Draw, MousePosition
 
@@ -19,6 +18,7 @@ def map_init():
     # position of fareo island: 62, -6.783333
     # Create map and display it
     fareo_map = folium.Map(location=[62, -6.78], zoom_start=8)
+    # allow the drawing tool, but rectangle only, others are all False
     draw = Draw(
         export=True,
         position='topleft',
@@ -30,6 +30,7 @@ def map_init():
         edit_options={'poly': {'allowIntersection': False}}
     )
     draw.add_to(fareo_map)
+    # monitor the move of mouse and display the real time position
     MousePosition(
         position="topright",
         separator=" | Lng: ",

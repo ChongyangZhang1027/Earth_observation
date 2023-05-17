@@ -1,5 +1,3 @@
-# add something
-# add something
 import os.path
 
 import folium
@@ -68,6 +66,7 @@ class MainWindow(QMainWindow):
         self.statusBar.showMessage("Default area")
 
     def _clearAll(self):
+        self.map = mapPlot.map_init()
         self.browser.load(self.url)
         self.boundary = []
 
@@ -100,7 +99,6 @@ class MainWindow(QMainWindow):
         self.browser.load(self.url)
 
     def _setLayout(self):
-
         dynamic_canvas1 = FigureCanvas(Figure(figsize=(9, 3), dpi=100))
         dynamic_canvas2 = FigureCanvas(Figure(figsize=(9, 3), dpi=100))
         dynamic_canvas3 = FigureCanvas(Figure(figsize=(9, 3), dpi=100))
@@ -115,18 +113,21 @@ class MainWindow(QMainWindow):
         self.textBrowser.setLineWrapMode(QTextEdit.NoWrap)
         self.textBrowser2 = QTextBrowser(self)
         self.textBrowser2.setLineWrapMode(QTextEdit.NoWrap)
+        # left column of the layout, map and raw data view
         vbox1 = QVBoxLayout()
         vbox1.addWidget(self.browser)
         vbox1.addWidget(dynamic_canvas1)
         vbox1.setStretch(0, 1)
         vbox1.setStretch(1, 1)
 
+        # middle column of the layout, result on map, and time series
         vbox2 = QVBoxLayout()
         vbox2.addWidget(dynamic_canvas2)
         vbox2.addWidget(dynamic_canvas3)
         vbox2.setStretch(0, 3)
         vbox2.setStretch(1, 1)
 
+        # left column of the layout, upper and lower part, to show different text result
         vbox3 = QVBoxLayout()
         vbox3.addWidget(self.textBrowser)
         vbox3.addWidget(self.textBrowser2)
@@ -139,6 +140,7 @@ class MainWindow(QMainWindow):
         hbox.setStretch(1, 3)
         hbox.setStretch(2, 1)
 
+        # the QMainWindow inherit the QWidget, but it can not directly set layout, use the center widget of the window
         centralWidget = QWidget()
         centralWidget.setLayout(hbox)
         self.setCentralWidget(centralWidget)
