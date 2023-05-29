@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (QTextEdit, QTextBrowser, QWidget, QHBoxLayout, QVBo
 from matplotlib.backends.backend_qt5agg import (FigureCanvasQTAgg as FigureCanvas)
 from matplotlib.figure import Figure
 import json
+import netCDF4
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -71,6 +72,8 @@ class MainWindow(QMainWindow):
         self.boundary = []
 
     def _processMenu(self):
+        self._dataVisualization()
+        self._plotResult()
         self.statusBar.showMessage("Process")
 
     def _setStatusBar(self):
@@ -144,4 +147,60 @@ class MainWindow(QMainWindow):
         centralWidget = QWidget()
         centralWidget.setLayout(hbox)
         self.setCentralWidget(centralWidget)
+
+    def _dataVisualization(self):
+        self._dynamic_ax1.clear()
+        fp = 'MetO-NWS-PHY-hi-CUR_1685226842264.nc'
+        data = netCDF4.Dataset(fp)
+        lat = data['lat']
+        lon = data['lon']
+        lon0 = np.mean(lon)
+        lat0 = np.mean(lat)
+        lon, lat = np.meshgrid(lon, lat)
+        self._dynamic_ax1.set_title('Current Velocity')
+        # self._dynamic_ax1.plot.pcolor(lon, lat, data['vo'][0, 0, :, :])
+        self._dynamic_ax1.pcolor(lon, lat, data['vo'][0, 0, :, :])
+        self._dynamic_ax1.set_xlabel('lon / deg')
+        self._dynamic_ax1.set_ylabel('lat / deg')
+        self._dynamic_ax1.axis('equal')
+        self._dynamic_ax1.axis('tight')
+        self._dynamic_ax1.figure.canvas.draw()
+
+    def _plotResult(self):
+        self._dynamic_ax2.clear()
+        fp = 'MetO-NWS-PHY-hi-CUR_1685226842264.nc'
+        data = netCDF4.Dataset(fp)
+        lat = data['lat']
+        lon = data['lon']
+        lon0 = np.mean(lon)
+        lat0 = np.mean(lat)
+        lon, lat = np.meshgrid(lon, lat)
+        # self._dynamic_ax1.plot.pcolor(lon, lat, data['vo'][0, 0, :, :])
+        self._dynamic_ax2.pcolor(lon, lat, data['vo'][0, 0, :, :])
+        self._dynamic_ax2.set_xlabel('lon / deg')
+        self._dynamic_ax2.set_ylabel('lat / deg')
+        self._dynamic_ax2.set_title('Ocean energy distribution map')
+        self._dynamic_ax2.axis('equal')
+        self._dynamic_ax2.axis('tight')
+        self._dynamic_ax2.figure.canvas.draw()
+
+        tt = np.linspace(1, 12, 48)
+        xx = np.sin(tt)
+        self._dynamic_ax3.plot(tt, xx)
+        self._dynamic_ax3.set_title('Ocean energy time series')
+        self._dynamic_ax3.set_xlabel('time / month')
+        self._dynamic_ax3.set_ylabel('energy')
+        self._dynamic_ax3.grid()
+        self._dynamic_ax3.axis('tight')
+        self._dynamic_ax3.figure.canvas.draw()
+
+        self.textBrowser.append('Tidal energy: = 1000\n')
+        self.textBrowser.append('Wave energy: = 1000\n')
+        self.textBrowser.append('Current energy: = 1000\n')
+
+        self.textBrowser2.append('Tidal energy variance: = 10\n')
+        self.textBrowser2.append('Wave energy variance: = 10\n')
+        self.textBrowser2.append('Current energy variance: = 10\n')
+
+
 
