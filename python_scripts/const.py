@@ -1,0 +1,12 @@
+import datetime
+today = datetime.date.today()
+
+EARTH_RADIUS = 6378e3
+AREA_LIMIT = 5e4
+MAX_LAT = 62.75
+MIN_LAT = 46
+MAX_LON = 13
+MIN_LON = -16
+PRODUCT_START_YEAR = 2019
+PRODUCT_END_YEAR = today.year
+PRODUCT_START_MONTH = 6

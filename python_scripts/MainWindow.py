@@ -1,3 +1,4 @@
+import math
 import os.path
 
 import folium
@@ -6,7 +7,7 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import (QTextEdit, QTextBrowser, QWidget, QHBoxLayout, QVBoxLayout, QMenuBar, QMainWindow,
                              QStatusBar, QFileDialog, QLineEdit, QLabel, QPushButton, QRadioButton, QFrame,
-                             QButtonGroup)
+                             QButtonGroup, QMessageBox)
 from matplotlib.backends.backend_qt5agg import (FigureCanvasQTAgg as FigureCanvas)
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolBar
 from matplotlib.figure import Figure
@@ -16,8 +17,10 @@ import netCDF4
 import xarray as xr
 import matplotlib.pyplot as plt
 import numpy as np
+import datetime
 
 import mapPlot
+from const import *
 
 
 class MainWindow(QMainWindow):
@@ -29,7 +32,7 @@ class MainWindow(QMainWindow):
         self.textBrowser = None
         self.map = None
         self.boundary = []
-        self.inputDataRange = [[2000, 1, 1, 0, 0, 0], [2023, 1, 1, 0, 0, 0]]
+        self.timeRange = []
         self.setWindowTitle('Ocean energy helper')
         self.setGeometry(100, 100, 1500, 900)
         self._setStatusBar()
@@ -47,7 +50,14 @@ class MainWindow(QMainWindow):
         item.setPath(path)
         item.accept()
 
+    def _strAddZero(self, timeStr):
+        if len(timeStr) < 2:
+            timeStr = '0' + timeStr
+        return timeStr
+
     def _openMenu(self):
+        folder = QFileDialog.getExistingDirectory(
+            self, 'set data folder', '')
         self.statusBar.showMessage("Open")
 
     def _quitMenu(self):
@@ -56,21 +66,124 @@ class MainWindow(QMainWindow):
     def _saveMenu(self):
         self.statusBar.showMessage("Save")
 
+    def _checkArea(self):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setText("Error type: 3")
+        msg.setWindowTitle("Error")
+        if not self.boundary or len(self.boundary) != 4:
+            msg.setInformativeText('Set boundary!')
+            msg.exec_()
+            return False
+        if self.boundary[0][0] > MAX_LAT or self.boundary[2][0] < MIN_LAT or \
+                self.boundary[0][1] < MIN_LON or self.boundary[1][1] > MAX_LON:
+            msg.setInformativeText('Boundary invalid!')
+            msg.exec_()
+
+        dx = (self.boundary[0][0] - self.boundary[2][0]) / 180 * math.pi * EARTH_RADIUS / 1e3
+        dy = (self.boundary[1][1] - self.boundary[0][1]) / 180 * math.pi * EARTH_RADIUS * \
+             math.cos(self.boundary[0][0] / 180 * math.pi) / 1e3
+        area = dx * dy
+        if area > AREA_LIMIT:
+            msg.setInformativeText('Area too large!')
+            msg.exec_()
+        return True
+
+    def _checkTime(self, start, end, middle):
+        startLimit = datetime.date(PRODUCT_START_YEAR, PRODUCT_START_MONTH, 1)
+        endLimit = datetime.date(today.year, today.month, 1)
+        startDate = datetime.date(start[0], start[1], start[2])
+        endDate = datetime.date(end[0], end[1], end[2])
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setText("Error type: 2")
+        msg.setWindowTitle("Error")
+        if startDate < startLimit or endDate > endLimit or startDate >= endDate:
+            msg.setInformativeText("Time exceeds limit!")
+            msg.exec_()
+            return False
+        if not middle == []:
+            if middle < startDate or middle > endDate:
+                msg.setInformativeText("Time exceeds limit!")
+                msg.exec_()
+                return False
+        return True
+
+    def _download(self):
+        if not self._checkArea():
+            return
+        if not self.timeRange:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Critical)
+            msg.setText("Error type: 2")
+            msg.setWindowTitle("Error")
+            msg.setInformativeText("Check time input!")
+            msg.exec_()
+            return
+        if not self._checkTime(self.timeRange[0], self.timeRange[1], []):
+            return
+        a = 0
+
     def _setAreaMenu(self):
         boundary_json = open("boundary.geojson", "rb")
         jsonObj = json.load(boundary_json)
         boundary_json.close()
         points = jsonObj["features"][0]["geometry"]["coordinates"][0]
-        self.boundary = [points[1], points[2], points[3], points[0]]
-        print(self.boundary)
+        self.boundary = [[points[1][1], points[1][0]], [points[2][1], points[2][0]],
+                         [points[3][1], points[3][0]], [points[0][1], points[0][0]]]
+        if not self._checkArea():
+            self.boundary = []
+            return
+        self.textBrowser2.append('Set boundary successfully:')
+        for pos in self.boundary:
+            self.textBrowser2.append('(' + str(pos[0]) + ',' + str(pos[1]) + ')')
+        self.textBrowser2.append(" ")
         self.statusBar.showMessage("Set area")
 
     def _defaultAreaMenu(self):
-        self.boundary = [[-8.4, 62.8], [62.8, -5.4], [60, -5.4], [60, -8.4]]
-        folium.Rectangle([(62.8, -8.4), (61, -5.4)]).add_to(self.map)
+        self.boundary = [[62.75, -8], [62.75, -6], [61, -6], [61, -8]]
+        self.textBrowser2.append('Set boundary successfully:')
+        for pos in self.boundary:
+            self.textBrowser2.append('(' + str(pos[0]) + ',' + str(pos[1]) + ')')
+        folium.Rectangle([(62.75, -8), (61, -6)]).add_to(self.map)
         self.map.save("fareo_map.html")
         self.browser.load(self.url)
         self.statusBar.showMessage("Default area")
+
+    def _setTimeRange(self):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setText("Error type: 2")
+        msg.setWindowTitle("Error")
+        if self.inputBeginYear.text() == "" or self.inputBeginMonth.text() == "" or \
+           self. inputEndYear.text() == "" or self.inputEndMonth.text() == "":
+            msg.setInformativeText("Check time input!")
+            msg.exec_()
+            return
+        self.timeRange = []
+
+        self.timeRange.append([int(self.inputBeginYear.text()), int(self.inputBeginMonth.text()), 1, 0, 0, 0])
+        self.timeRange.append([int(self.inputEndYear.text()), int(self.inputEndMonth.text()), 1, 0, 0, 0])
+        if not self._checkTime(self.timeRange[0], self.timeRange[1], []):
+            self.timeRange = []
+            return
+        self.textBrowser2.append("Set time range successfully")
+        self.textBrowser2.append("Begin time: " + self.inputBeginYear.text() + "-" +
+                                 self._strAddZero(self.inputBeginMonth.text()) + "-01 00:00:00")
+        self.textBrowser2.append("End time:   " + self.inputEndYear.text() + "-" +
+                                 self._strAddZero(self.inputEndMonth.text()) + "-01 00:00:00\n")
+        self.statusBar.showMessage("set time range")
+
+    def _defaultTime(self):
+        self.timeRange = [[2023, 3, 1, 0, 0, 0], [2023, 5, 1, 0, 0, 0]]
+        self.inputBeginYear.setText("2023")
+        self.inputBeginMonth.setText("03")
+        self.inputEndYear.setText("2023")
+        self.inputEndMonth.setText("05")
+        self.textBrowser2.append('Set time successfully:')
+        self.textBrowser2.append("Begin time: 2023-03-01 00:00:00")
+        self.textBrowser2.append("End time:   2023-05-01 00:00:00\n")
+        self.statusBar.showMessage("Default time")
 
     def _clearAll(self):
         self.map = mapPlot.map_init()
@@ -94,8 +207,11 @@ class MainWindow(QMainWindow):
         fileMenu.addAction("Open", self._openMenu)
         fileMenu.addAction("Save", self._saveMenu)
         fileMenu.addAction("Quit", self._quitMenu)
+        fileMenu.addAction("Download", self._download)
         editMenu.addAction("Set area", self._setAreaMenu)
         editMenu.addAction("Default area", self._defaultAreaMenu)
+        editMenu.addAction("Set time", self._setTimeRange)
+        editMenu.addAction("Default time", self._defaultTime)
         editMenu.addAction("Clear", self._clearAll)
         toolMenu.addAction("Process", self._processMenu)
         self.setMenuBar(self.menuBar)
@@ -110,25 +226,25 @@ class MainWindow(QMainWindow):
     def _setText(self):
         # begin time and end time
         self.inputBeginYear = QLineEdit(self)
-        self.inputBeginYear.setValidator(QIntValidator(self.inputDataRange[0][0], self.inputDataRange[1][0], self))
+        self.inputBeginYear.setValidator(QIntValidator(PRODUCT_START_YEAR, PRODUCT_END_YEAR, self))
         self.inputBeginMonth = QLineEdit(self)
         self.inputBeginMonth.setValidator(QIntValidator(1, 12, self))
-        self.inputBeginDay = QLineEdit(self)
-        self.inputBeginDay.setValidator(QIntValidator(1, 31, self))
-        self.inputBeginHour = QLineEdit(self)
-        self.inputBeginHour.setValidator(QIntValidator(0, 23, self))
+        # self.inputBeginDay = QLineEdit(self)
+        # self.inputBeginDay.setValidator(QIntValidator(1, 31, self))
+        # self.inputBeginHour = QLineEdit(self)
+        # self.inputBeginHour.setValidator(QIntValidator(0, 23, self))
         self.inputEndYear = QLineEdit(self)
-        self.inputEndYear.setValidator(QIntValidator(self.inputDataRange[0][0], self.inputDataRange[1][0], self))
+        self.inputEndYear.setValidator(QIntValidator(PRODUCT_START_YEAR, PRODUCT_END_YEAR, self))
         self.inputEndMonth = QLineEdit(self)
         self.inputEndMonth.setValidator(QIntValidator(1, 12, self))
-        self.inputEndDay = QLineEdit(self)
-        self.inputEndDay.setValidator(QIntValidator(1, 31, self))
-        self.inputEndHour = QLineEdit(self)
-        self.inputEndHour.setValidator(QIntValidator(0, 23, self))
+        # self.inputEndDay = QLineEdit(self)
+        # self.inputEndDay.setValidator(QIntValidator(1, 31, self))
+        # self.inputEndHour = QLineEdit(self)
+        # self.inputEndHour.setValidator(QIntValidator(0, 23, self))
 
         # raw data show time
         self.rawDataYear = QLineEdit(self)
-        self.rawDataYear.setValidator(QIntValidator(self.inputDataRange[0][0], self.inputDataRange[1][0], self))
+        self.rawDataYear.setValidator(QIntValidator(PRODUCT_START_YEAR, PRODUCT_END_YEAR, self))
         self.rawDataMonth = QLineEdit(self)
         self.rawDataMonth.setValidator(QIntValidator(1, 12, self))
         self.rawDataDay = QLineEdit(self)
@@ -139,7 +255,7 @@ class MainWindow(QMainWindow):
 
         # result show time
         self.resYear = QLineEdit(self)
-        self.resYear.setValidator(QIntValidator(self.inputDataRange[0][0], self.inputDataRange[1][0], self))
+        self.resYear.setValidator(QIntValidator(PRODUCT_START_YEAR, PRODUCT_END_YEAR, self))
         self.resMonth = QLineEdit(self)
         self.resMonth.setValidator(QIntValidator(1, 12, self))
         self.resDay = QLineEdit(self)
@@ -174,27 +290,28 @@ class MainWindow(QMainWindow):
         # left column of the layout, map and raw data view
         self._setCanvas()
         self._setText()
-        hboxInputBeginCtrl = QHBoxLayout()
-        hboxInputBeginCtrl.addWidget(QLabel('Begin: '))
-        hboxInputBeginCtrl.addWidget(QLabel('year'))
-        hboxInputBeginCtrl.addWidget(self.inputBeginYear)
-        hboxInputBeginCtrl.addWidget(QLabel('month'))
-        hboxInputBeginCtrl.addWidget(self.inputBeginMonth)
-        hboxInputBeginCtrl.addWidget(QLabel('day'))
-        hboxInputBeginCtrl.addWidget(self.inputBeginDay)
-        hboxInputBeginCtrl.addWidget(QLabel('hour'))
-        hboxInputBeginCtrl.addWidget(self.inputBeginHour)
+        hboxInputTimeCtrl = QHBoxLayout()
+        hboxInputTimeCtrl.addWidget(QLabel('Begin: '))
+        hboxInputTimeCtrl.addWidget(QLabel('year'))
+        hboxInputTimeCtrl.addWidget(self.inputBeginYear)
+        hboxInputTimeCtrl.addWidget(QLabel('month'))
+        hboxInputTimeCtrl.addWidget(self.inputBeginMonth)
 
-        hboxInputEndCtrl = QHBoxLayout()
-        hboxInputEndCtrl.addWidget(QLabel('End:   '))
-        hboxInputEndCtrl.addWidget(QLabel('year'))
-        hboxInputEndCtrl.addWidget(self.inputEndYear)
-        hboxInputEndCtrl.addWidget(QLabel('month'))
-        hboxInputEndCtrl.addWidget(self.inputEndMonth)
-        hboxInputEndCtrl.addWidget(QLabel('day'))
-        hboxInputEndCtrl.addWidget(self.inputEndDay)
-        hboxInputEndCtrl.addWidget(QLabel('hour'))
-        hboxInputEndCtrl.addWidget(self.inputEndHour)
+        hboxInputTimeCtrl.addWidget(QLabel('  End: '))
+        hboxInputTimeCtrl.addWidget(QLabel('year'))
+        hboxInputTimeCtrl.addWidget(self.inputEndYear)
+        hboxInputTimeCtrl.addWidget(QLabel('month'))
+        hboxInputTimeCtrl.addWidget(self.inputEndMonth)
+        # hboxInputBeginCtrl.addWidget(QLabel('day'))
+        # hboxInputBeginCtrl.addWidget(self.inputBeginDay)
+        # hboxInputBeginCtrl.addWidget(QLabel('hour'))
+        # hboxInputBeginCtrl.addWidget(self.inputBeginHour)
+
+        # hboxInputEndCtrl = QHBoxLayout()
+        # hboxInputEndCtrl.addWidget(QLabel('day'))
+        # hboxInputEndCtrl.addWidget(self.inputEndDay)
+        # hboxInputEndCtrl.addWidget(QLabel('hour'))
+        # hboxInputEndCtrl.addWidget(self.inputEndHour)
 
         self.rawDataShowBtn = QPushButton(self)
         self.rawDataShowBtn.setText('show')
@@ -214,14 +331,14 @@ class MainWindow(QMainWindow):
         hboxRawDataCtrl.addWidget(self.rawDataShowBtn)
         vbox1 = QVBoxLayout()
 
-        vbox1.addLayout(hboxInputBeginCtrl)
-        vbox1.addLayout(hboxInputEndCtrl)
+        vbox1.addLayout(hboxInputTimeCtrl)
+        # vbox1.addLayout(hboxInputEndCtrl)
         vbox1.addWidget(self.browser)
         vbox1.addLayout(hboxRawDataCtrl)
         vbox1.addWidget(self.dynamic_canvas1)
         vbox1.addWidget(self.figToolBar1)
-        vbox1.setStretch(2, 1)
-        vbox1.setStretch(4, 1)
+        vbox1.setStretch(1, 1)
+        vbox1.setStretch(3, 1)
 
         # middle column of the layout, result on map, and time series
         self.resPrevBtn = QPushButton(self)
@@ -392,6 +509,3 @@ class MainWindow(QMainWindow):
         self.textBrowser2.append('Tidal energy variance: = 10\n')
         self.textBrowser2.append('Wave energy variance: = 10\n')
         self.textBrowser2.append('Current energy variance: = 10\n')
-
-
-

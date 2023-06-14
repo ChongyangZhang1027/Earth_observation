@@ -1,6 +1,6 @@
 import folium
 from folium.plugins import Draw, MousePosition
-
+from const import *
 
 def plot_point(lat, lng):
     # Create map and display it
@@ -30,6 +30,7 @@ def map_init():
         edit_options={'poly': {'allowIntersection': False}}
     )
     draw.add_to(fareo_map)
+    folium.Rectangle([(MAX_LAT, MIN_LON), (MIN_LAT, MAX_LON)]).add_to(fareo_map)
     # monitor the move of mouse and display the real time position
     MousePosition(
         position="topright",
