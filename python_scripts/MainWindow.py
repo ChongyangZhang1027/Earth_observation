@@ -1,13 +1,15 @@
 import math
 import os.path
+from os import popen
 
 import folium
+import matplotlib.pyplot
 from PyQt5.QtGui import QIntValidator
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import (QTextEdit, QTextBrowser, QWidget, QHBoxLayout, QVBoxLayout, QMenuBar, QMainWindow,
                              QStatusBar, QFileDialog, QLineEdit, QLabel, QPushButton, QRadioButton, QFrame,
-                             QButtonGroup, QMessageBox)
+                             QButtonGroup, QMessageBox, QComboBox)
 from matplotlib.backends.backend_qt5agg import (FigureCanvasQTAgg as FigureCanvas)
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolBar
 from matplotlib.figure import Figure
@@ -31,8 +33,13 @@ class MainWindow(QMainWindow):
         self.menuBar = None
         self.textBrowser = None
         self.map = None
+        self.workspacePath = ""
+        self.userName = ""
+        self.passwd = ""
         self.boundary = []
-        self.timeRange = []
+        self.timeRange = [[], []]
+        self.filenames = [[], []]
+        self.variables = ['VTM02', 'VSDX', 'VSDY', 'VHM0', 'zos']
         self.setWindowTitle('Ocean energy helper')
         self.setGeometry(100, 100, 1500, 900)
         self._setStatusBar()
@@ -56,8 +63,9 @@ class MainWindow(QMainWindow):
         return timeStr
 
     def _openMenu(self):
-        folder = QFileDialog.getExistingDirectory(
+        self.workspacePath = QFileDialog.getExistingDirectory(
             self, 'set data folder', '')
+        self.textBrowser2.append("workspace path: " + self.workspacePath)
         self.statusBar.showMessage("Open")
 
     def _quitMenu(self):
@@ -67,45 +75,37 @@ class MainWindow(QMainWindow):
         self.statusBar.showMessage("Save")
 
     def _checkArea(self):
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Critical)
-        msg.setText("Error type: 3")
-        msg.setWindowTitle("Error")
         if not self.boundary or len(self.boundary) != 4:
-            msg.setInformativeText('Set boundary!')
-            msg.exec_()
+            self._alertMsg(3, "Set boundary!")
             return False
         if self.boundary[0][0] > MAX_LAT or self.boundary[2][0] < MIN_LAT or \
                 self.boundary[0][1] < MIN_LON or self.boundary[1][1] > MAX_LON:
-            msg.setInformativeText('Boundary invalid!')
-            msg.exec_()
+            self._alertMsg(3, "Boundary invalid!")
+            return False
 
         dx = (self.boundary[0][0] - self.boundary[2][0]) / 180 * math.pi * EARTH_RADIUS / 1e3
         dy = (self.boundary[1][1] - self.boundary[0][1]) / 180 * math.pi * EARTH_RADIUS * \
              math.cos(self.boundary[0][0] / 180 * math.pi) / 1e3
         area = dx * dy
         if area > AREA_LIMIT:
-            msg.setInformativeText('Area too large!')
-            msg.exec_()
+            self._alertMsg(3, "Area too large!")
         return True
 
     def _checkTime(self, start, end, middle):
+        if not start or not end:
+            self._alertMsg(2, "Check time input!")
+            return False
         startLimit = datetime.date(PRODUCT_START_YEAR, PRODUCT_START_MONTH, 1)
         endLimit = datetime.date(today.year, today.month, 1)
         startDate = datetime.date(start[0], start[1], start[2])
         endDate = datetime.date(end[0], end[1], end[2])
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Critical)
-        msg.setText("Error type: 2")
-        msg.setWindowTitle("Error")
         if startDate < startLimit or endDate > endLimit or startDate >= endDate:
-            msg.setInformativeText("Time exceeds limit!")
-            msg.exec_()
+            self._alertMsg(2, "Time exceeds limit!")
             return False
         if not middle == []:
-            if middle < startDate or middle > endDate:
-                msg.setInformativeText("Time exceeds limit!")
-                msg.exec_()
+            middleDate = datetime.date(middle[0], middle[1], middle[2])
+            if middleDate < startDate or middleDate > endDate:
+                self._alertMsg(2, "Time exceeds limit!")
                 return False
         return True
 
@@ -113,16 +113,53 @@ class MainWindow(QMainWindow):
         if not self._checkArea():
             return
         if not self.timeRange:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Critical)
-            msg.setText("Error type: 2")
-            msg.setWindowTitle("Error")
-            msg.setInformativeText("Check time input!")
-            msg.exec_()
+            self._alertMsg(2, "Check time input!")
             return
         if not self._checkTime(self.timeRange[0], self.timeRange[1], []):
             return
-        a = 0
+        monthCnt = (self.timeRange[1][0] - self.timeRange[0][0]) * 12 + self.timeRange[1][1] - self.timeRange[0][1]
+        self.workspacePath = "./workspace/"
+        self.userName = "czhang17"
+        self.passwd = "410302xyzZCY!"
+        dataPath = self.workspacePath + "/data/"
+        for monIdx in range(monthCnt):
+            year = self.timeRange[0][0] + int(monIdx / 12)
+            nextYear = self.timeRange[0][0] + int((monIdx + 1) / 12)
+            currMon = (self.timeRange[0][1] + monIdx) % 12
+            nextMon = (currMon + 1) % 12
+            if currMon == 0:
+                currMon = 12
+            currMon = self._strAddZero(str(currMon))
+            if nextMon == 0:
+                nextMon = 12
+            nextMon = self._strAddZero(str(nextMon))
+            cmdLine = "python -m motuclient --motu https://nrt.cmems-du.eu/motu-web/Motu --service-id " \
+                      "NORTHWESTSHELF_ANALYSIS_FORECAST_WAV_004_014-TDS --product-id MetO-NWS-WAV-hi" \
+                      + " --longitude-min " + str(self.boundary[0][1]) + " --longitude-max " + str(self.boundary[1][1])\
+                      + " --latitude-min " + str(self.boundary[2][0]) + " --latitude-max " + str(self.boundary[0][0]) \
+                      + " --date-min \"" + str(year) + "-" + currMon + "-01 00:00:00\"" \
+                        " --date-max \"" + str(nextYear) + "-" + str(nextMon) + "-01 00:00:00\"" \
+                        " --variable VHM0 --variable VSDX --variable VSDY --variable VTM02" \
+                        " --out-dir " + dataPath + " --out-name MetO-NWS-WAV-" + str(year) + "-" + str(currMon) + ".nc"\
+                        " --user " + self.userName + " --pwd " + self.passwd
+            self.textBrowser2.append("Downloading " + str(year) + "-" + currMon)
+            downMsg = popen(cmdLine).read()
+            self.textBrowser2.append(downMsg)
+            cmdLine = "python -m motuclient --motu https://nrt.cmems-du.eu/motu-web/Motu --service-id " \
+                      "NORTHWESTSHELF_ANALYSIS_FORECAST_PHY_004_013-TDS --product-id MetO-NWS-PHY-hi-SSH" \
+                      + " --longitude-min " + str(self.boundary[0][1]) + " --longitude-max " + str(self.boundary[1][1])\
+                      + " --latitude-min " + str(self.boundary[2][0]) + " --latitude-max " + str(self.boundary[0][0]) \
+                      + " --date-min \"" + str(year) + "-" + currMon + "-01 00:00:00\"" \
+                        " --date-max \"" + str(nextYear) + "-" + str(nextMon) + "-01 00:00:00\"" \
+                      " --variable zos" \
+                        " --out-dir " + dataPath + " --out-name MetO-NWS-PHY-hi-SSH-" + str(year) + "-" + str(currMon) + ".nc"\
+                        " --user " + self.userName + " --pwd " + self.passwd
+            self.textBrowser2.append("Downloading " + str(year) + "-" + currMon)
+            downMsg = popen(cmdLine).read()
+            self.textBrowser2.append(downMsg)
+            self.textBrowser2.append(str(year) + "-" + currMon + "download finished")
+            self.textBrowser2.append("\n")
+            # print(cmdLine)
 
     def _setAreaMenu(self):
         boundary_json = open("boundary.geojson", "rb")
@@ -151,21 +188,16 @@ class MainWindow(QMainWindow):
         self.statusBar.showMessage("Default area")
 
     def _setTimeRange(self):
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Critical)
-        msg.setText("Error type: 2")
-        msg.setWindowTitle("Error")
         if self.inputBeginYear.text() == "" or self.inputBeginMonth.text() == "" or \
-           self. inputEndYear.text() == "" or self.inputEndMonth.text() == "":
-            msg.setInformativeText("Check time input!")
-            msg.exec_()
+                self.inputEndYear.text() == "" or self.inputEndMonth.text() == "":
+            self._alertMsg(2, "Check time input!")
             return
-        self.timeRange = []
+        self.timeRange = [[], []]
 
-        self.timeRange.append([int(self.inputBeginYear.text()), int(self.inputBeginMonth.text()), 1, 0, 0, 0])
-        self.timeRange.append([int(self.inputEndYear.text()), int(self.inputEndMonth.text()), 1, 0, 0, 0])
+        self.timeRange[0] = [int(self.inputBeginYear.text()), int(self.inputBeginMonth.text()), 1, 0, 0, 0]
+        self.timeRange[1] = [int(self.inputEndYear.text()), int(self.inputEndMonth.text()), 1, 0, 0, 0]
         if not self._checkTime(self.timeRange[0], self.timeRange[1], []):
-            self.timeRange = []
+            self.timeRange = [[], []]
             return
         self.textBrowser2.append("Set time range successfully")
         self.textBrowser2.append("Begin time: " + self.inputBeginYear.text() + "-" +
@@ -175,14 +207,14 @@ class MainWindow(QMainWindow):
         self.statusBar.showMessage("set time range")
 
     def _defaultTime(self):
-        self.timeRange = [[2023, 3, 1, 0, 0, 0], [2023, 5, 1, 0, 0, 0]]
-        self.inputBeginYear.setText("2023")
+        self.timeRange = [[2022, 3, 1, 0, 0, 0], [2022, 5, 1, 0, 0, 0]]
+        self.inputBeginYear.setText("2022")
         self.inputBeginMonth.setText("03")
-        self.inputEndYear.setText("2023")
+        self.inputEndYear.setText("2022")
         self.inputEndMonth.setText("05")
         self.textBrowser2.append('Set time successfully:')
-        self.textBrowser2.append("Begin time: 2023-03-01 00:00:00")
-        self.textBrowser2.append("End time:   2023-05-01 00:00:00\n")
+        self.textBrowser2.append("Begin time: 2022-03-01 00:00:00")
+        self.textBrowser2.append("End time:   2022-05-01 00:00:00\n")
         self.statusBar.showMessage("Default time")
 
     def _clearAll(self):
@@ -251,7 +283,7 @@ class MainWindow(QMainWindow):
         self.rawDataDay.setValidator(QIntValidator(1, 31, self))
         self.rawDataHour = QLineEdit(self)
         self.rawDataHour.setValidator(QIntValidator(0, 23, self))
-        self.rawDataType = QLineEdit(self)
+        # self.rawDataType = QLineEdit(self)
 
         # result show time
         self.resYear = QLineEdit(self)
@@ -284,6 +316,7 @@ class MainWindow(QMainWindow):
         self.figToolBar1 = NavigationToolBar(self.dynamic_canvas1, self)
         self.figToolBar2 = NavigationToolBar(self.dynamic_canvas2, self)
         self.figToolBar3 = NavigationToolBar(self.dynamic_canvas3, self)
+        self.rawDataColorBar = ''
 
     def _setLayout(self):
         self.centralWidget = QWidget()
@@ -317,9 +350,13 @@ class MainWindow(QMainWindow):
         self.rawDataShowBtn.setText('show')
         self.rawDataShowBtn.clicked.connect(self._dataVisualization)
 
+        self.comBox = QComboBox(self)
+        self.comBox.addItems(['VTM02', 'VSDX', 'VSDY', 'VHM0', 'zos'])
+
         hboxRawDataCtrl = QHBoxLayout()
-        hboxRawDataCtrl.addWidget(QLabel('param'))
-        hboxRawDataCtrl.addWidget(self.rawDataType)
+        # hboxRawDataCtrl.addWidget(QLabel('param'))
+        hboxRawDataCtrl.addWidget(self.comBox)
+        # hboxRawDataCtrl.addWidget(self.rawDataType)
         hboxRawDataCtrl.addWidget(QLabel('year'))
         hboxRawDataCtrl.addWidget(self.rawDataYear)
         hboxRawDataCtrl.addWidget(QLabel('month'))
@@ -440,38 +477,119 @@ class MainWindow(QMainWindow):
     def _setResType(self):
         a = 0
 
+    def _alertMsg(self, errorNum, errorMsg):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setText("Error type: " + str(errorNum))
+        msg.setWindowTitle("Error")
+        msg.setInformativeText(errorMsg)
+        msg.exec_()
+
+    def _checkData(self, showPath=True):
+        if self.workspacePath == "":
+            self._alertMsg(1, "Check workspace path!")
+            return False
+        dataPath = self.workspacePath + "/data/"
+        if not os.path.exists(dataPath):
+            self._alertMsg(1, "Check data path!")
+            return False
+        fileList = os.walk(dataPath)
+        if showPath:
+            self.textBrowser2.append("Files read:")
+        wavFileCnt = 0
+        sshFileCnt = 0
+        for root, dir, fileList in fileList:
+            for file in fileList:
+                if showPath:
+                    self.textBrowser2.append(file)
+                if not file.find("WAV") == -1:
+                    wavFileCnt = wavFileCnt + 1
+                    self.filenames[0].append(dataPath + file)
+                if not file.find("SSH") == -1:
+                    sshFileCnt = sshFileCnt + 1
+                    self.filenames[1].append(dataPath + file)
+
+        if showPath:
+            self.textBrowser2.append("\n")
+        if not fileList:
+            self._alertMsg(1, "No data files!")
+            self.filenames = [[], []]
+            return False
+        if not wavFileCnt == sshFileCnt:
+            self._alertMsg(1, "Check data files!")
+            self.filenames = [[], []]
+            return False
+        # print(self.filenames)
+        return True
+
     def _dataVisualization(self):
-        self._dynamic_ax1.clear()
-        fp = 'MetO-NWS-PHY-hi-CUR_1685448686393.nc'
-        # data = netCDF4.Dataset(fp)
-        data_set = xr.open_dataset(fp)
-        param = self.rawDataType.text()
+        if not self._checkData(False):
+            return
+
+        param = self.comBox.currentText()
         year = self.rawDataYear.text()
         month = self.rawDataMonth.text()
-
         day = self.rawDataDay.text()
         hour = self.rawDataHour.text()
+        if not self._checkTime(self.timeRange[0], self.timeRange[1], [int(year), int(month), 15, 0, 0, 0]):
+            return
+
+        month = self._strAddZero(month)
+        day = self._strAddZero(day)
+        hour = self._strAddZero(hour)
+
         if param == '' or year == '' or month == '' or day == '' or hour == '':
-            data = data_set['vo'][:, :, :, :]
+            self._alertMsg(2, "Check time input!")
+            return
+        latParamName = 'lat'
+        lonParamName = 'lon'
+        if param == "zos":
+            fileList = self.filenames[1]
         else:
-            if len(month) < 2:
-                month = '0' + month
-            if len(day) < 2:
-                day = '0' + day
-            if len(hour) < 2:
-                hour = '0' + hour
-            time_stamp = year + "-" + str(month) + "-" + str(day) + "T" + str(hour) + ":00:00"
-            data = data_set[param].sel(time=time_stamp, method="nearest")
-        lat = data_set['lat']
-        lon = data_set['lon']
+            fileList = self.filenames[0]
+            latParamName = 'latitude'
+            lonParamName = 'longitude'
+        fp = ''
+        fileExistFlag = False
+        for file in fileList:
+            if not file.find(year + '-' + month) == -1:
+                fileExistFlag = True
+                fp = file
+                break
+        if not fileExistFlag:
+            self._alertMsg(1, "Check data file!")
+            return
+        data_set = xr.open_dataset(fp)
+        time_stamp = year + "-" + str(month) + "-" + str(day) + "T" + str(hour) + ":00:00"
+        data = data_set[param].sel(time=time_stamp, method="nearest")
+
+        self._dynamic_ax1.clear()
+        if not self.rawDataColorBar == '':
+            self.rawDataColorBar.remove()
+        lat = data_set[latParamName]
+        lon = data_set[lonParamName]
         lon, lat = np.meshgrid(lon, lat)
-        self._dynamic_ax1.set_title('Current Velocity')
-        # self._dynamic_ax1.pcolor(lon, lat, data['vo'][0, 0, :, :])
-        self._dynamic_ax1.pcolor(lon, lat, data[0, 0, :, :])
+        title = ''
+        if param == 'VTM02':
+            title = 'Spectral moments (0,2) wave period Tm02'
+        elif param == 'VSDX':
+            title = 'Stokes drift U'
+        elif param == 'VSDY':
+            title = 'Stokes drift V'
+        elif param == 'VHM0':
+            title = 'Spectral significant wave height (Hm0)'
+        else:
+            title = 'Sea surface height above geoid'
+        self._dynamic_ax1.set_title(title)
+        if param == 'zos':
+            data = data[0]
+        c = self._dynamic_ax1.pcolor(lon, lat, data[:, :])
         self._dynamic_ax1.set_xlabel('lon / deg')
         self._dynamic_ax1.set_ylabel('lat / deg')
         self._dynamic_ax1.axis('equal')
         self._dynamic_ax1.axis('tight')
+        self.rawDataColorBar = self.dynamic_canvas1.figure.colorbar(c, ax=self._dynamic_ax1)
+        # self.dynamic_canvas1.figure.colorbar(ax=self._dynamic_ax1)
         self._dynamic_ax1.figure.canvas.draw()
 
     def _plotResult(self):
