@@ -223,8 +223,15 @@ class MainWindow(QMainWindow):
         self.boundary = []
 
     def _processMenu(self):
-        self._dataVisualization()
-        self._plotResult()
+        # self._dataVisualization()
+        # self._plotResult()
+        if not self._checkArea():
+            return
+        if not self._checkTime(self.timeRange[0], self.timeRange[1], []):
+            return
+        if not self._checkData(True):
+            return
+
         self.statusBar.showMessage("Process")
 
     def _setStatusBar(self):
@@ -286,14 +293,14 @@ class MainWindow(QMainWindow):
         # self.rawDataType = QLineEdit(self)
 
         # result show time
-        self.resYear = QLineEdit(self)
-        self.resYear.setValidator(QIntValidator(PRODUCT_START_YEAR, PRODUCT_END_YEAR, self))
-        self.resMonth = QLineEdit(self)
-        self.resMonth.setValidator(QIntValidator(1, 12, self))
-        self.resDay = QLineEdit(self)
-        self.resDay.setValidator(QIntValidator(1, 31, self))
-        self.resHour = QLineEdit(self)
-        self.resHour.setValidator(QIntValidator(0, 23, self))
+        # self.resYear = QLineEdit(self)
+        # self.resYear.setValidator(QIntValidator(PRODUCT_START_YEAR, PRODUCT_END_YEAR, self))
+        # self.resMonth = QLineEdit(self)
+        # self.resMonth.setValidator(QIntValidator(1, 12, self))
+        # self.resDay = QLineEdit(self)
+        # self.resDay.setValidator(QIntValidator(1, 31, self))
+        # self.resHour = QLineEdit(self)
+        # self.resHour.setValidator(QIntValidator(0, 23, self))
         # self.resType = QLineEdit(self)
 
         # message and summary
@@ -385,24 +392,24 @@ class MainWindow(QMainWindow):
         self.resNextBtn.setText('next')
         self.resNextBtn.clicked.connect(self._setNextEpoch)
 
-        self.resShowMonthBtn = QRadioButton('Monthly')
-        self.resShowMonthBtn.setChecked(True)
-        self.resShowMonthBtn.toggled.connect(self._setTimeResolution)
-        self.resShowDayBtn = QRadioButton('Daily  ')
-        self.resShowDayBtn.toggled.connect(self._setTimeResolution)
-        self.resShowHourBtn = QRadioButton('Hourly ')
-        self.resShowHourBtn.toggled.connect(self._setTimeResolution)
-        timeBtnGrp = QButtonGroup(self.centralWidget)
-        timeBtnGrp.addButton(self.resShowMonthBtn)
-        timeBtnGrp.addButton(self.resShowDayBtn)
-        timeBtnGrp.addButton(self.resShowHourBtn)
+        # self.resShowMonthBtn = QRadioButton('Monthly')
+        # self.resShowMonthBtn.setChecked(True)
+        # self.resShowMonthBtn.toggled.connect(self._setTimeResolution)
+        # self.resShowDayBtn = QRadioButton('Daily  ')
+        # self.resShowDayBtn.toggled.connect(self._setTimeResolution)
+        # self.resShowHourBtn = QRadioButton('Hourly ')
+        # self.resShowHourBtn.toggled.connect(self._setTimeResolution)
+        # timeBtnGrp = QButtonGroup(self.centralWidget)
+        # timeBtnGrp.addButton(self.resShowMonthBtn)
+        # timeBtnGrp.addButton(self.resShowDayBtn)
+        # timeBtnGrp.addButton(self.resShowHourBtn)
 
-        self.resTypeBtn1 = QRadioButton('Tidal  ')
+        self.resTypeBtn1 = QRadioButton('Tidal energy')
         self.resTypeBtn1.setChecked(True)
         self.resTypeBtn1.toggled.connect(self._setResType)
-        self.resTypeBtn2 = QRadioButton('Wave   ')
+        self.resTypeBtn2 = QRadioButton('Wave potential')
         self.resTypeBtn2.toggled.connect(self._setResType)
-        self.resTypeBtn3 = QRadioButton('Current')
+        self.resTypeBtn3 = QRadioButton('Current energy')
         self.resTypeBtn3.toggled.connect(self._setResType)
         typeBtnGrp = QButtonGroup(self.centralWidget)
         typeBtnGrp.addButton(self.resTypeBtn1)
@@ -412,27 +419,28 @@ class MainWindow(QMainWindow):
         hboxResShowBtn1 = QHBoxLayout()
         # hboxResShowBtn.addWidget(QLabel('type'))
         # hboxResShowBtn.addWidget(self.resType)
-        hboxResShowBtn1.addWidget(QLabel('year '))
-        hboxResShowBtn1.addWidget(self.resYear)
-        hboxResShowBtn1.addWidget(QLabel('month'))
-        hboxResShowBtn1.addWidget(self.resMonth)
-        hboxResShowBtn1.addWidget(self.resShowMonthBtn)
-        hboxResShowBtn1.addWidget(self.resShowDayBtn)
-        hboxResShowBtn1.addWidget(self.resShowHourBtn)
-        hboxResShowBtn1.addWidget(self.resPrevBtn)
+        # hboxResShowBtn1.addWidget(QLabel('year '))
+        # hboxResShowBtn1.addWidget(self.resYear)
+        # hboxResShowBtn1.addWidget(QLabel('month'))
+        # hboxResShowBtn1.addWidget(self.resMonth)
+        # hboxResShowBtn1.addWidget(self.resShowMonthBtn)
+        # hboxResShowBtn1.addWidget(self.resShowDayBtn)
+        # hboxResShowBtn1.addWidget(self.resShowHourBtn)
+        # hboxResShowBtn1.addWidget(self.resPrevBtn)
 
         hboxResShowBtn2 = QHBoxLayout()
-        hboxResShowBtn2.addWidget(QLabel('day  '))
-        hboxResShowBtn2.addWidget(self.resDay)
-        hboxResShowBtn2.addWidget(QLabel('hour '))
-        hboxResShowBtn2.addWidget(self.resHour)
+        # hboxResShowBtn2.addWidget(QLabel('day  '))
+        # hboxResShowBtn2.addWidget(self.resDay)
+        # hboxResShowBtn2.addWidget(QLabel('hour '))
+        # hboxResShowBtn2.addWidget(self.resHour)
         hboxResShowBtn2.addWidget(self.resTypeBtn1)
         hboxResShowBtn2.addWidget(self.resTypeBtn2)
         hboxResShowBtn2.addWidget(self.resTypeBtn3)
         hboxResShowBtn2.addWidget(self.resNextBtn)
+        hboxResShowBtn2.addWidget(self.resPrevBtn)
 
         vbox2 = QVBoxLayout()
-        vbox2.addLayout(hboxResShowBtn1)
+        # vbox2.addLayout(hboxResShowBtn1)
         vbox2.addLayout(hboxResShowBtn2)
         vbox2.addWidget(self.dynamic_canvas2)
         vbox2.addWidget(self.figToolBar2)
@@ -498,6 +506,7 @@ class MainWindow(QMainWindow):
             self.textBrowser2.append("Files read:")
         wavFileCnt = 0
         sshFileCnt = 0
+        self.filenames = [[], []]
         for root, dir, fileList in fileList:
             for file in fileList:
                 if showPath:
