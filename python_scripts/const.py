@@ -17,4 +17,6 @@ SEA_WATER_DENSITY = 1027         # [kg/m^3]
 TURBINE_EFFICIENT = 0.4
 LAT_RESOLUTION = 0.014           # [deg]
 LON_RESOLUTION = 0.03
-TURBINE_COVER_AREA = 400         # [m^2]
+TURBINE_COVER_AREA = 25          # [m^2]
+KWH_TO_J = 3600000               # unit transfer, J to kwh
+TIME_RESOLUTION = 3600           # [s]
