@@ -6,6 +6,7 @@ class DataStruct:
     monEnergyMap = []  # monthly distribution map for three kinds of energy
     totalEnergyMap = []
     timeSeries = []  # daily time series for three kinds of energy
+    timeIdx = []
     optSite = []
     dailyAvg = 0
 
