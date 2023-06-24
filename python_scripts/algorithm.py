@@ -1,10 +1,9 @@
-import numpy
 import copy
+
 from DataModule import *
 import numpy as np
 from const import *
 import math
-import matplotlib.pyplot as plt
 
 
 def dilatation(land, rows, cols):
@@ -23,39 +22,40 @@ def GetLandMask(data, rows, cols, operationCnt):
     landMask = np.zeros([rows, cols])
     for i in range(rows):
         for j in range(cols):
-            if numpy.isnan(data[i, j]):
+            if np.isnan(data[i, j]):
                 landMask[i, j] = 1
     originalLandMask = np.copy(landMask)
-    # landMask = dilatation(landMask, len(lat), len(lon))
     for i in range(operationCnt):
         landMask = dilatation(landMask, rows, cols)
     return originalLandMask, landMask-originalLandMask
 
 
-def CurrEnergyMap(filePath, numOfTurbinePerUnit):
+def CurrPowerMap(filePath, numOfTurbinePerUnit):
     VSDX = np.array(readData(filePath, 'VSDX'))
     VSDY = np.array(readData(filePath, 'VSDY'))
     lat = np.array(readData(filePath, 'latitude'))
     lon = np.array(readData(filePath, 'longitude'))
     tt = np.array(readData(filePath, 'time'))
 
+    deltaT = 1
     totalEnergyPerMonth = np.zeros([len(lat), len(lon)])
     for i in range(len(tt)):
         vx = VSDX[i, :, :]
         vy = VSDY[i, :, :]
         velo = np.sqrt(np.square(vx) + np.square(vy))
         E_velo = 0.5 * SEA_WATER_DENSITY * CROSS_AREA_TURBINE_SMALL * TURBINE_EFFICIENT * np.power(velo, 3) \
-            * numOfTurbinePerUnit * (TIME_RESOLUTION / KWH_TO_J)
+            * numOfTurbinePerUnit * deltaT
         totalEnergyPerMonth = totalEnergyPerMonth + E_velo
-    return totalEnergyPerMonth
+    return totalEnergyPerMonth / len(tt)
 
 
-def CurrEnergySeries(file, maxIdx, numOfTurbinePerUnit):
+def CurrPowerSeries(file, maxIdx, numOfTurbinePerUnit):
     VSDX = np.array(readData(file, 'VSDX'))
     VSDY = np.array(readData(file, 'VSDY'))
     tt = np.array(readData(file, 'time'))
     totalEnergyPerDay = 0
-    dailyEnergySeq = []
+    deltaT = 1
+    dailyPowerSeq = []
     timeSeq = []
     dayCnt = 1
     for t in range(len(tt)):
@@ -63,14 +63,14 @@ def CurrEnergySeries(file, maxIdx, numOfTurbinePerUnit):
         vy = VSDY[t, maxIdx[0], maxIdx[1]]
         velo = math.sqrt(vx ** 2 + vy ** 2)
         E_velo = 0.5 * SEA_WATER_DENSITY * CROSS_AREA_TURBINE_SMALL * TURBINE_EFFICIENT * math.pow(velo, 3) \
-            * numOfTurbinePerUnit * (TIME_RESOLUTION / KWH_TO_J)
+            * numOfTurbinePerUnit * deltaT
         totalEnergyPerDay = totalEnergyPerDay + E_velo
         if t % 24 == 23:
             timeSeq.append(copy.copy(dayCnt))
             dayCnt = dayCnt + 1
-            dailyEnergySeq.append(copy.copy(totalEnergyPerDay))
+            dailyPowerSeq.append(copy.copy(totalEnergyPerDay / 24))
             totalEnergyPerDay = 0
-    return dailyEnergySeq, timeSeq
+    return dailyPowerSeq, timeSeq
 
 
 def WavePotentialMap(filePath, numOfTurbinePerUnit):
@@ -81,13 +81,14 @@ def WavePotentialMap(filePath, numOfTurbinePerUnit):
     tt = np.array(readData(filePath, 'time'))
 
     totalEnergyPerMonth = np.zeros([len(lat), len(lon)])
+    deltaT = 1
     for i in range(len(tt)):
         Hw = VHM[i, :, :]
         Tw = VTM[i, :, :]
         E = SEA_WATER_DENSITY * (GRAVITY**2) * (Hw**2) * Tw * numOfTurbinePerUnit * TURBINE_EFFICIENT \
-            * WIDTH_OF_GENERATOR / 64 / math.pi * (TIME_RESOLUTION / Tw / KWH_TO_J)
+            * WIDTH_OF_GENERATOR / 64 / math.pi * deltaT
         totalEnergyPerMonth = totalEnergyPerMonth + E
-    return totalEnergyPerMonth
+    return totalEnergyPerMonth / len(tt)
 
 
 def WavePotentialSeries(file, maxIdx, numOfTurbinePerUnit):
@@ -95,21 +96,22 @@ def WavePotentialSeries(file, maxIdx, numOfTurbinePerUnit):
     VTM = np.array(readData(file, 'VTM02'))
     tt = np.array(readData(file, 'time'))
     totalEnergyPerDay = 0
-    dailyEnergySeq = []
+    deltaT = 1
+    dailyPowerSeq = []
     timeSeq = []
     dayCnt = 1
     for t in range(len(tt)):
         Hw = VHM[t, maxIdx[0], maxIdx[1]]
         Tw = VTM[t, maxIdx[0], maxIdx[1]]
         E = SEA_WATER_DENSITY * (GRAVITY**2) * (Hw**2) * Tw * numOfTurbinePerUnit * TURBINE_EFFICIENT \
-            * WIDTH_OF_GENERATOR / 64 / math.pi * (TIME_RESOLUTION / Tw / KWH_TO_J)
+            * WIDTH_OF_GENERATOR / 64 / math.pi * deltaT
         totalEnergyPerDay = totalEnergyPerDay + E
         if t % 24 == 23:
             timeSeq.append(copy.copy(dayCnt))
             dayCnt = dayCnt + 1
-            dailyEnergySeq.append(copy.copy(totalEnergyPerDay))
+            dailyPowerSeq.append(copy.copy(totalEnergyPerDay/24))
             totalEnergyPerDay = 0
-    return dailyEnergySeq, timeSeq
+    return dailyPowerSeq, timeSeq
 
 
 def SearchMaximum(energyMap, searchArea, rows, cols):
@@ -124,10 +126,7 @@ def SearchMaximum(energyMap, searchArea, rows, cols):
     return maxVal, maxIdx
 
 
-def main():
-    fileLists = ['./workspace/data/MetO-NWS-WAV-2022-01.nc', './workspace/data/MetO-NWS-WAV-2022-02.nc',
-                 './workspace/data/MetO-NWS-WAV-2022-03.nc']
-    # fileLists = ['./workspace/data/MetO-NWS-WAV-2022-01.nc']
+def CurrEnergy(fileLists):
     tempData = readData(fileLists[0], 'VSDX')
     lat = np.array(readData(fileLists[0], 'latitude'))
     lon = np.array(readData(fileLists[0], 'longitude'))
@@ -135,68 +134,68 @@ def main():
     eastResolution = LON_RESOLUTION / 180.0 * math.pi * EARTH_RADIUS * math.cos(lat[0] / 180.0 * math.pi)
     areaUnit = northResolution * eastResolution
     numOfTurbinePerUnit = int(areaUnit / TURBINE_COVER_AREA)
+    dilatationCnt = int(DISTANCE_LIMIT / max(northResolution, eastResolution))
 
-    landMask, searchArea = GetLandMask(tempData[0, :, :], len(lat), len(lon), 2)
+    landMask, searchArea = GetLandMask(tempData[0, :, :], len(lat), len(lon), dilatationCnt)
 
     currentEnergy = DataStruct()
-    wavePotential = DataStruct()
-    wavePotential.totalEnergyMap = np.zeros([len(lat), len(lon)])
-    currentEnergy.totalEnergyMap = np.zeros([len(lat), len(lon)])
+    currentEnergy.totalPowerMap = np.zeros([len(lat), len(lon)])
     for file in fileLists:
-        energyMap = CurrEnergyMap(file, 1)
-        currentEnergy.monEnergyMap.append(copy.copy(energyMap))
-        currentEnergy.totalEnergyMap = currentEnergy.totalEnergyMap + energyMap
-        energyMap = WavePotentialMap(file, 1)
-        wavePotential.monEnergyMap.append(copy.copy(energyMap))
-        wavePotential.totalEnergyMap = wavePotential.totalEnergyMap + energyMap
+        powerMap = CurrPowerMap(file, 1)
+        currentEnergy.monPowerMap.append(np.array(powerMap) * 1)
+        currentEnergy.totalPowerMap = currentEnergy.totalPowerMap + np.array(powerMap) / len(fileLists)
 
-    maxVal, maxIdx = SearchMaximum(currentEnergy.totalEnergyMap, searchArea, len(lat), len(lon))
-    latMax = lat[maxIdx[0]]
-    lonMax = lon[maxIdx[1]]
-    currentEnergy.optSite = [maxIdx, [latMax, lonMax]]
-    print('max energy output per unit: ' + str(maxVal))
-    print('site position: [' + str(lonMax) + ', ' + str(latMax) + ']')
-
-    maxVal, maxIdx = SearchMaximum(wavePotential.totalEnergyMap, searchArea, len(lat), len(lon))
-    latMax = lat[maxIdx[0]]
-    lonMax = lon[maxIdx[1]]
-    wavePotential.optSite = [maxIdx, [latMax, lonMax]]
+    maxVal, maxIdx = SearchMaximum(currentEnergy.totalPowerMap, searchArea, len(lat), len(lon))
+    currentEnergy.optSite = [maxIdx, [lat[maxIdx[0]], lon[maxIdx[1]]]]
 
     for file in fileLists:
-        timeSeries, timeIdx = CurrEnergySeries(file, currentEnergy.optSite[0], 1)
+        timeSeries, timeIdx = CurrPowerSeries(file, currentEnergy.optSite[0], 1)
         currentEnergy.timeSeries = currentEnergy.timeSeries + list(timeSeries)
         currentEnergy.timeIdx = currentEnergy.timeIdx + list(np.array(timeIdx) + len(currentEnergy.timeIdx))
     currentEnergy.dailyAvg = np.average(currentEnergy.timeSeries)
-    print('average energy per day: ' + str(np.average(currentEnergy.timeSeries)))
+    currentEnergy.lat = lat
+    currentEnergy.lon = lon
+
+    return currentEnergy
+
+
+def WaveEnergy(fileLists):
+    tempData = readData(fileLists[0], 'VSDX')
+    lat = np.array(readData(fileLists[0], 'latitude'))
+    lon = np.array(readData(fileLists[0], 'longitude'))
+    northResolution = LAT_RESOLUTION / 180.0 * math.pi * EARTH_RADIUS
+    eastResolution = LON_RESOLUTION / 180.0 * math.pi * EARTH_RADIUS * math.cos(lat[0] / 180.0 * math.pi)
+    areaUnit = northResolution * eastResolution
+    numOfTurbinePerUnit = int(areaUnit / TURBINE_COVER_AREA)
+    dilatationCnt = int(DISTANCE_LIMIT / max(northResolution, eastResolution))
+
+    landMask, searchArea = GetLandMask(tempData[0, :, :], len(lat), len(lon), dilatationCnt)
+
+    wavePotential = DataStruct()
+    wavePotential.totalPowerMap = np.zeros([len(lat), len(lon)])
+    for file in fileLists:
+        powerMap = WavePotentialMap(file, 1)
+        wavePotential.monPowerMap.append(np.array(powerMap) * 1)
+        wavePotential.totalPowerMap = wavePotential.totalPowerMap + np.array(powerMap) / len(fileLists)
+
+    maxVal, maxIdx = SearchMaximum(wavePotential.totalPowerMap, searchArea, len(lat), len(lon))
+    wavePotential.optSite = [maxIdx, [lat[maxIdx[0]], lon[maxIdx[1]]]]
 
     for file in fileLists:
         timeSeries, timeIdx = WavePotentialSeries(file, wavePotential.optSite[0], 1)
         wavePotential.timeSeries = wavePotential.timeSeries + list(timeSeries)
         wavePotential.timeIdx = wavePotential.timeIdx + list(np.array(timeIdx) + len(wavePotential.timeIdx))
     wavePotential.dailyAvg = np.average(wavePotential.timeSeries)
-
-    # plot
-    lon, lat = np.meshgrid(lon, lat)
-    plt.pcolor(lon, lat, currentEnergy.totalEnergyMap)
-    plt.colorbar()
-    plt.scatter(lonMax, latMax, marker='^')
-    plt.title('Current energy distribution map')
-    plt.xlabel('lat [deg]')
-    plt.ylabel('lon [deg]')
-    plt.show()
-    plt.plot(currentEnergy.timeIdx, currentEnergy.timeSeries, marker='.')
-    plt.title('Daily current energy time series')
-    plt.xlabel('time [day]')
-    plt.ylabel('power [kWh]')
-    plt.grid()
-    plt.show()
+    wavePotential.lat = lat
+    wavePotential.lon = lon
 
     # plt.pcolor(lon, lat, searchArea)
     # plt.colorbar()
     # plt.show()
-    plt.pcolor(lon, lat, landMask+searchArea)
-    plt.colorbar()
-    plt.show()
+    # plt.pcolor(lon, lat, landMask+searchArea)
+    # plt.colorbar()
+    # plt.show()
+    return wavePotential
 
 
 def TidalEnergyMap(file, areaUnit):
@@ -205,9 +204,9 @@ def TidalEnergyMap(file, areaUnit):
     lon = np.array(readData(file, 'lon'))
     tt = np.array(range(len(readData(file, 'time'))))
 
-    totalEnergyPerMonth = np.zeros([len(lat), len(lon)])
     rs = 0
     cs = 0
+    # find a pixel which is not nan
     for i in range(len(lat)):
         for j in range(len(lon)):
             if not np.isnan(SSH[0, i, j]):
@@ -215,6 +214,7 @@ def TidalEnergyMap(file, areaUnit):
                 cs = j
                 break
 
+    # calculate tidal peak time according to the pixel found
     peakIdx = []
     peakVal = []
     for t in range(len(tt)-2):
@@ -223,9 +223,12 @@ def TidalEnergyMap(file, areaUnit):
                 or SSH[idx, rs, cs] == SSH[idx-1, rs, cs]:
             peakIdx.append(copy.copy(idx))
             peakVal.append(copy.copy(SSH[idx, rs, cs]))
+
+    # calculate the tidal energy
+    totalEnergyPerMonth = np.zeros([len(lat), len(lon)])
     for t in range(len(peakIdx)-1):
         deltaH = np.abs(SSH[peakIdx[t], :, :] - SSH[peakIdx[t+1], :, :])
-        E = 0.5 * SEA_WATER_DENSITY * areaUnit * np.square(deltaH) * TURBINE_EFFICIENT
+        E = 0.5 * SEA_WATER_DENSITY * GRAVITY * areaUnit * np.square(deltaH) * DAM_EFFICIENT
         totalEnergyPerMonth = totalEnergyPerMonth + E
 
     # plt.plot(tt/24, SSH[:, rs, cs])
@@ -236,7 +239,7 @@ def TidalEnergyMap(file, areaUnit):
     # plt.grid()
     # plt.tight_layout()
     # plt.show()
-    return totalEnergyPerMonth, peakIdx
+    return totalEnergyPerMonth / len(tt) / 3600, peakIdx
 
 
 def TidalEnergySeries(file, maxIdx, peakIdx, areaUnit):
@@ -245,14 +248,14 @@ def TidalEnergySeries(file, maxIdx, peakIdx, areaUnit):
     timeSeries = []
     for t in range(len(peakIdx) - 1):
         deltaH = np.abs(SSH[peakIdx[t], maxIdx[0], maxIdx[1]] - SSH[peakIdx[t+1], maxIdx[0], maxIdx[1]])
-        E = 0.5 * SEA_WATER_DENSITY * areaUnit * np.square(deltaH) * TURBINE_EFFICIENT
-        timeSeries.append(copy.copy(E))
+        E = 0.5 * SEA_WATER_DENSITY * areaUnit * GRAVITY * np.square(deltaH) * DAM_EFFICIENT
+        timeSeries.append(copy.copy(E / (peakIdx[t+1] - peakIdx[t]) / 3600))
     return timeSeries, peakIdx[1:]
 
 
-def TidalEnergy():
-    fileLists = ['./workspace/data/MetO-NWS-PHY-hi-SSH-2022-01.nc', './workspace/data/MetO-NWS-PHY-hi-SSH-2022-02.nc',
-                 './workspace/data/MetO-NWS-PHY-hi-SSH-2022-03.nc']
+def TidalEnergy(fileLists):
+    # fileLists = ['./workspace/data/MetO-NWS-PHY-hi-SSH-2022-01.nc', './workspace/data/MetO-NWS-PHY-hi-SSH-2022-02.nc',
+    #              './workspace/data/MetO-NWS-PHY-hi-SSH-2022-03.nc']
 
     # fileLists = ['./workspace/data/MetO-NWS-PHY-hi-SSH-2022-03.nc']
     tempData = readData(fileLists[0], 'zos')
@@ -266,21 +269,16 @@ def TidalEnergy():
     landMask, searchArea = GetLandMask(tempData[0, :, :], len(lat), len(lon), 1)
 
     tidalEnergy = DataStruct()
-    tidalEnergy.totalEnergyMap = np.zeros([len(lat), len(lon)])
+    tidalEnergy.totalPowerMap = np.zeros([len(lat), len(lon)])
     tidalPeakIdx = []
     for file in fileLists:
-        energyMap, peakIdx = TidalEnergyMap(file, 1)
+        powerMap, peakIdx = TidalEnergyMap(file, 1)
         tidalPeakIdx.append(peakIdx.copy())
-        tidalEnergy.monEnergyMap.append(copy.copy(energyMap))
-        tidalEnergy.totalEnergyMap = tidalEnergy.totalEnergyMap + energyMap
+        tidalEnergy.monPowerMap.append(copy.copy(powerMap))
+        tidalEnergy.totalPowerMap = tidalEnergy.totalPowerMap + powerMap / len(fileLists)
 
-    maxVal, maxIdx = SearchMaximum(tidalEnergy.totalEnergyMap, searchArea, len(lat), len(lon))
-    latMax = lat[maxIdx[0]]
-    lonMax = lon[maxIdx[1]]
-    tidalEnergy.optSite = [maxIdx, [latMax, lonMax]]
-
-    print('max energy output per unit: ' + str(maxVal))
-    print('site position: [' + str(lonMax) + ', ' + str(latMax) + ']')
+    maxVal, maxIdx = SearchMaximum(tidalEnergy.totalPowerMap, searchArea, len(lat), len(lon))
+    tidalEnergy.optSite = [maxIdx, [lat[maxIdx[0]], lon[maxIdx[1]]]]
 
     j = 0
     timeShift = 0
@@ -290,27 +288,21 @@ def TidalEnergy():
         tidalEnergy.timeSeries = tidalEnergy.timeSeries + list(timeSeries)
         tidalEnergy.timeIdx = tidalEnergy.timeIdx + list(np.array(timeIdx)/24 + timeShift)
         timeShift = timeShift + len(readData(file, 'time')) / 24
-    tidalEnergy.dailyAvg = tidalEnergy.totalEnergyMap[maxIdx[0], maxIdx[1]] / timeShift
-    print('average energy per day: ' + str(np.average(tidalEnergy.timeSeries)))
+    # tidalEnergy.dailyAvg = tidalEnergy.totalPowerMap[maxIdx[0], maxIdx[1]] / timeShift
+    tidalEnergy.dailyAvg = np.average(tidalEnergy.timeSeries)
+    tidalEnergy.lat = lat
+    tidalEnergy.lon = lon
+    return tidalEnergy
 
-    # plot
-    lon, lat = np.meshgrid(lon, lat)
-    plt.pcolor(lon, lat, tidalEnergy.totalEnergyMap)
-    plt.title('Tidal energy distribution map')
-    plt.xlabel('lat [deg]')
-    plt.ylabel('lon [deg]')
-    # plt.pcolor(lon, lat, searchArea)
-    plt.colorbar()
-    plt.scatter(lonMax, latMax, marker='^')
-    plt.show()
-    plt.plot(tidalEnergy.timeIdx, tidalEnergy.timeSeries, marker='.')
-    plt.title('Daily tidal energy time series')
-    plt.xlabel('time [day]')
-    plt.ylabel('power [kWh]')
-    plt.grid()
-    plt.show()
-
-
-if __name__ == "__main__":
-    main()
-    # TidalEnergy()
+# if __name__ == "__main__":
+#     filenames = [[], []]
+#     dataPath = './workspace/data/'
+#     fileList = os.walk(dataPath)
+#     for root, dir, fileList in fileList:
+#         for file in fileList:
+#             if not file.find("WAV") == -1:
+#                 filenames[0].append(dataPath + file)
+#             if not file.find("SSH") == -1:
+#                 filenames[1].append(dataPath + file)
+#     CurrWaveEnergy(filenames[0])
+#     TidalEnergy(filenames[1])

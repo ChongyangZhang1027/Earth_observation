@@ -2,6 +2,7 @@ import folium
 from folium.plugins import Draw, MousePosition
 from const import *
 
+
 def plot_point(lat, lng):
     # Create map and display it
     fareo_map = folium.Map(location=[lat, lng], zoom_start=12)

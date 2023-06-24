@@ -1,28 +1,26 @@
 import math
 import os.path
+import time
 from os import popen
 
 import folium
-import matplotlib.pyplot
 from PyQt5.QtGui import QIntValidator
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5 import QtCore
+from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import (QTextEdit, QTextBrowser, QWidget, QHBoxLayout, QVBoxLayout, QMenuBar, QMainWindow,
                              QStatusBar, QFileDialog, QLineEdit, QLabel, QPushButton, QRadioButton, QFrame,
                              QButtonGroup, QMessageBox, QComboBox)
 from matplotlib.backends.backend_qt5agg import (FigureCanvasQTAgg as FigureCanvas)
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolBar
 from matplotlib.figure import Figure
-# from matplotlib.backends.backend_qtagg import FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 import json
-import netCDF4
-import xarray as xr
-import matplotlib.pyplot as plt
 import numpy as np
-import datetime
+# import datetime
 
 import mapPlot
-from const import *
+from algorithm import *
+from ProcessThread import processThread
 
 
 class MainWindow(QMainWindow):
@@ -36,8 +34,11 @@ class MainWindow(QMainWindow):
         self.workspacePath = ""
         self.userName = ""
         self.passwd = ""
+        self.monthIdxOfResult = 0
         self.boundary = []
         self.timeRange = [[], []]
+        self.pThread = processThread()
+        self.pThread.signal.connect(self._callback)
         self.filenames = [[], []]
         self.variables = ['VTM02', 'VSDX', 'VSDY', 'VHM0', 'zos']
         self.setWindowTitle('Ocean energy helper')
@@ -50,9 +51,6 @@ class MainWindow(QMainWindow):
             self._handleDownloadRequest)
 
     def _handleDownloadRequest(self, item):
-        # path, _ = QFileDialog.getSaveFileName(
-        #     self, "Save File", item.suggestedFileName()
-        # )
         path = "boundary.geojson"
         item.setPath(path)
         item.accept()
@@ -65,7 +63,7 @@ class MainWindow(QMainWindow):
     def _openMenu(self):
         self.workspacePath = QFileDialog.getExistingDirectory(
             self, 'set data folder', '')
-        self.textBrowser2.append("workspace path: " + self.workspacePath)
+        self.textBrowser2.append("workspace path: " + self.workspacePath + '\n')
         self.statusBar.showMessage("Open")
 
     def _quitMenu(self):
@@ -174,7 +172,7 @@ class MainWindow(QMainWindow):
         self.textBrowser2.append('Set boundary successfully:')
         for pos in self.boundary:
             self.textBrowser2.append('(' + str(pos[0]) + ',' + str(pos[1]) + ')')
-        self.textBrowser2.append(" ")
+        self.textBrowser2.append("\n")
         self.statusBar.showMessage("Set area")
 
     def _defaultAreaMenu(self):
@@ -182,6 +180,7 @@ class MainWindow(QMainWindow):
         self.textBrowser2.append('Set boundary successfully:')
         for pos in self.boundary:
             self.textBrowser2.append('(' + str(pos[0]) + ',' + str(pos[1]) + ')')
+        self.textBrowser2.append("")
         folium.Rectangle([(62.75, -8), (61, -6)]).add_to(self.map)
         self.map.save("fareo_map.html")
         self.browser.load(self.url)
@@ -207,14 +206,14 @@ class MainWindow(QMainWindow):
         self.statusBar.showMessage("set time range")
 
     def _defaultTime(self):
-        self.timeRange = [[2022, 3, 1, 0, 0, 0], [2022, 5, 1, 0, 0, 0]]
+        self.timeRange = [[2022, 1, 1, 0, 0, 0], [2022, 4, 1, 0, 0, 0]]
         self.inputBeginYear.setText("2022")
-        self.inputBeginMonth.setText("03")
+        self.inputBeginMonth.setText("01")
         self.inputEndYear.setText("2022")
-        self.inputEndMonth.setText("05")
+        self.inputEndMonth.setText("04")
         self.textBrowser2.append('Set time successfully:')
-        self.textBrowser2.append("Begin time: 2022-03-01 00:00:00")
-        self.textBrowser2.append("End time:   2022-05-01 00:00:00\n")
+        self.textBrowser2.append("Begin time: 2022-01-01 00:00:00")
+        self.textBrowser2.append("End time:   2022-04-01 00:00:00\n")
         self.statusBar.showMessage("Default time")
 
     def _clearAll(self):
@@ -231,8 +230,30 @@ class MainWindow(QMainWindow):
             return
         if not self._checkData(True):
             return
+        self.pThread.filenames = self.filenames
+        time.sleep(1)
+        self.pThread.start()
 
         self.statusBar.showMessage("Process")
+
+    def _callback(self, energyList):
+        self.oceanEnergy = energyList
+        # print
+        self.textBrowser.append('current power plant: [' + str(self.oceanEnergy[0].optSite[1][1]) + ', ' +
+                                str(self.oceanEnergy[0].optSite[1][0]) + ']')
+        self.textBrowser.append('average current power: ' + str(np.average(self.oceanEnergy[0].timeSeries)) +
+                                ' W/m^2\n')
+
+        self.textBrowser.append('wave potential power plant: [' + str(self.oceanEnergy[1].optSite[1][1]) + ', ' +
+                                str(self.oceanEnergy[1].optSite[1][0]) + ']')
+        self.textBrowser.append('average wave power: ' + str(np.average(self.oceanEnergy[1].timeSeries) / 1000) +
+                                ' kW/m\n')
+
+        self.textBrowser.append('tidal potential power plant: [' + str(self.oceanEnergy[2].optSite[1][1]) + ', ' +
+                                str(self.oceanEnergy[2].optSite[1][0]) + ']')
+        self.textBrowser.append('average tidal power: ' + str(np.average(self.oceanEnergy[2].timeSeries)) + ' W/m^2\n')
+
+        self._plotResult(2, -1)
 
     def _setStatusBar(self):
         self.statusBar = QStatusBar()
@@ -324,6 +345,7 @@ class MainWindow(QMainWindow):
         self.figToolBar2 = NavigationToolBar(self.dynamic_canvas2, self)
         self.figToolBar3 = NavigationToolBar(self.dynamic_canvas3, self)
         self.rawDataColorBar = ''
+        self.resultColorBar = ''
 
     def _setLayout(self):
         self.centralWidget = QWidget()
@@ -436,8 +458,8 @@ class MainWindow(QMainWindow):
         hboxResShowBtn2.addWidget(self.resTypeBtn1)
         hboxResShowBtn2.addWidget(self.resTypeBtn2)
         hboxResShowBtn2.addWidget(self.resTypeBtn3)
-        hboxResShowBtn2.addWidget(self.resNextBtn)
         hboxResShowBtn2.addWidget(self.resPrevBtn)
+        hboxResShowBtn2.addWidget(self.resNextBtn)
 
         vbox2 = QVBoxLayout()
         # vbox2.addLayout(hboxResShowBtn1)
@@ -477,10 +499,18 @@ class MainWindow(QMainWindow):
         a = 0
 
     def _setNextEpoch(self):
-        a = 0
+        if self.monthIdxOfResult + 1 >= len(self.oceanEnergy[0].monPowerMap):
+            self._alertMsg(5, 'No next epoch!')
+            return
+        self.monthIdxOfResult = self.monthIdxOfResult + 1
+        self._plotResult(2, self.monthIdxOfResult)
 
     def _setPrevEpoch(self):
-        a = 0
+        if self.monthIdxOfResult - 1 < -1:
+            self._alertMsg(5, 'No previous epoch!')
+            return
+        self.monthIdxOfResult = self.monthIdxOfResult - 1
+        self._plotResult(2, self.monthIdxOfResult)
 
     def _setResType(self):
         a = 0
@@ -540,6 +570,11 @@ class MainWindow(QMainWindow):
         month = self.rawDataMonth.text()
         day = self.rawDataDay.text()
         hour = self.rawDataHour.text()
+
+        if param == '' or year == '' or month == '' or day == '' or hour == '':
+            self._alertMsg(2, "Check time input!")
+            return
+
         if not self._checkTime(self.timeRange[0], self.timeRange[1], [int(year), int(month), 15, 0, 0, 0]):
             return
 
@@ -547,9 +582,6 @@ class MainWindow(QMainWindow):
         day = self._strAddZero(day)
         hour = self._strAddZero(hour)
 
-        if param == '' or year == '' or month == '' or day == '' or hour == '':
-            self._alertMsg(2, "Check time input!")
-            return
         latParamName = 'lat'
         lonParamName = 'lon'
         if param == "zos":
@@ -578,7 +610,6 @@ class MainWindow(QMainWindow):
         lat = data_set[latParamName]
         lon = data_set[lonParamName]
         lon, lat = np.meshgrid(lon, lat)
-        title = ''
         if param == 'VTM02':
             title = 'Spectral moments (0,2) wave period Tm02'
         elif param == 'VSDX':
@@ -601,38 +632,67 @@ class MainWindow(QMainWindow):
         # self.dynamic_canvas1.figure.colorbar(ax=self._dynamic_ax1)
         self._dynamic_ax1.figure.canvas.draw()
 
-    def _plotResult(self):
+    def _plotResult(self, typeIdx, monthIdx):
         self._dynamic_ax2.clear()
-        fp = 'MetO-NWS-PHY-hi-CUR_1685226842264.nc'
-        data = netCDF4.Dataset(fp)
-        lat = data['lat']
-        lon = data['lon']
-        lon0 = np.mean(lon)
-        lat0 = np.mean(lat)
-        lon, lat = np.meshgrid(lon, lat)
-        # self._dynamic_ax1.plot.pcolor(lon, lat, data['vo'][0, 0, :, :])
-        self._dynamic_ax2.pcolor(lon, lat, data['vo'][0, 0, :, :])
-        self._dynamic_ax2.set_xlabel('lon / deg')
-        self._dynamic_ax2.set_ylabel('lat / deg')
-        self._dynamic_ax2.set_title('Ocean energy distribution map')
-        self._dynamic_ax2.axis('equal')
-        self._dynamic_ax2.axis('tight')
-        self._dynamic_ax2.figure.canvas.draw()
-
-        tt = np.linspace(1, 12, 48)
-        xx = np.sin(tt)
-        self._dynamic_ax3.plot(tt, xx)
-        self._dynamic_ax3.set_title('Ocean energy time series')
-        self._dynamic_ax3.set_xlabel('time / month')
-        self._dynamic_ax3.set_ylabel('energy')
+        if not self.resultColorBar == '':
+            self.resultColorBar.remove()
+        self._dynamic_ax3.clear()
+        if typeIdx == 0:
+            title0 = 'Current energy distribution [W/m^2] '
+            title2 = ' [W/m^2]'
+            title = 'Current energy time series'
+            yLabel = 'power [W/m^2]'
+        elif typeIdx == 1:
+            title0 = 'Wave energy distribution [kW/m] '
+            title2 = ' [kW/m]'
+            title = 'Wave energy time series'
+            yLabel = 'power [kW/m]'
+        elif typeIdx == 2:
+            title0 = 'Tidal energy distribution '
+            title2 = ' [W/m^2]'
+            title = 'Tidal energy time series'
+            yLabel = 'power [W/m^2]'
+        else:
+            self._alertMsg(4, 'Data type error!')
+            return
+        # plot time series
+        self._dynamic_ax3.plot(self.oceanEnergy[typeIdx].timeIdx, self.oceanEnergy[typeIdx].timeSeries, marker='.')
+        self._dynamic_ax3.set_title(title)
+        self._dynamic_ax3.set_xlabel('time [day]')
+        self._dynamic_ax3.set_ylabel(yLabel)
         self._dynamic_ax3.grid()
-        self._dynamic_ax3.axis('tight')
         self._dynamic_ax3.figure.canvas.draw()
 
-        self.textBrowser.append('Tidal energy: = 1000\n')
-        self.textBrowser.append('Wave energy: = 1000\n')
-        self.textBrowser.append('Current energy: = 1000\n')
+        # plot distribution map
+        lon, lat = np.meshgrid(self.oceanEnergy[typeIdx].lon, self.oceanEnergy[typeIdx].lat)
+        if monthIdx == -1:
+            c = self._dynamic_ax2.pcolor(lon, lat, self.oceanEnergy[typeIdx].totalPowerMap)
+            title1 = 'average'
+        else:
+            c = self._dynamic_ax2.pcolor(lon, lat, self.oceanEnergy[typeIdx].monPowerMap[monthIdx])
+            title1 = self.filenames[0][monthIdx][-10:-3]
+        self._dynamic_ax2.set_title(title0 + title1 + title2)
+        self._dynamic_ax2.set_xlabel('lon [deg]')
+        self._dynamic_ax2.set_ylabel('lat [deg]')
+        self.resultColorBar = self.dynamic_canvas2.figure.colorbar(c, ax=self._dynamic_ax2)
+        self._dynamic_ax2.scatter(self.oceanEnergy[typeIdx].optSite[1][1], self.oceanEnergy[typeIdx].optSite[1][0],
+                                  marker='^')
+        self._dynamic_ax2.figure.canvas.draw()
 
-        self.textBrowser2.append('Tidal energy variance: = 10\n')
-        self.textBrowser2.append('Wave energy variance: = 10\n')
-        self.textBrowser2.append('Current energy variance: = 10\n')
+        # # plot
+        # lon, lat = np.meshgrid(lon, lat)
+        # plt.figure()
+        # plt.pcolor(lon, lat, currentEnergy.totalPowerMap)
+        # plt.colorbar()
+        # plt.scatter(currentEnergy.optSite[1][1], currentEnergy.optSite[1][0], marker='^')
+        # plt.title('Current energy distribution map [W/m^2]')
+        # plt.xlabel('lon [deg]')
+        # plt.ylabel('lat [deg]')
+       #
+        # plt.figure()
+        # plt.pcolor(lon, lat, wavePotential.totalPowerMap / 1000)
+        # plt.colorbar()
+        # plt.scatter(wavePotential.optSite[1][1], wavePotential.optSite[1][0], marker='^')
+        # plt.title('Wave energy distribution map [kW/m]')
+        # plt.xlabel('lon [deg]')
+        # plt.ylabel('lat [deg]')

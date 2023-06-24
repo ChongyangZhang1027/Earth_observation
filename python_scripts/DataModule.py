@@ -3,15 +3,19 @@ import xarray as xr
 
 
 class DataStruct:
-    monEnergyMap = []  # monthly distribution map for three kinds of energy
-    totalEnergyMap = []
-    timeSeries = []  # daily time series for three kinds of energy
-    timeIdx = []
-    optSite = []
-    dailyAvg = 0
+    def __init__(self):
+        self.monPowerMap = []  # monthly distribution map for three kinds of energy
+        self.totalPowerMap = []
+        self.timeSeries = []  # daily time series for three kinds of energy
+        self.timeIdx = []
+        self.optSite = []
+        self.dailyAvg = 0
+        self.lat = []
+        self.lon = []
 
     def _dataClear(self):
-        self.distributionMap = []
+        self.monPowerMap = []
+        self.totalPowerMap = []
         self.timeSeries = []
 
 
