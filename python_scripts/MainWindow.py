@@ -82,6 +82,7 @@ class MainWindow(QMainWindow):
             self._alertMsg(4, "Check the result!")
             return
         saveData(self.workspacePath + "/res/", self.oceanEnergy)
+        self.textBrowser2.append("data saved\n")
         self.statusBar.showMessage("Save")
 
     def _checkArea(self):
