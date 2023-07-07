@@ -1,26 +1,27 @@
 import math
 import os.path
 import time
-from os import popen
-
+import datetime
+import xarray as xr
 import folium
+import json
+import numpy as np
+from PyQt5.QtCore import QCoreApplication
+
 from PyQt5.QtGui import QIntValidator
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5 import QtCore
-from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import (QTextEdit, QTextBrowser, QWidget, QHBoxLayout, QVBoxLayout, QMenuBar, QMainWindow,
                              QStatusBar, QFileDialog, QLineEdit, QLabel, QPushButton, QRadioButton, QFrame,
                              QButtonGroup, QMessageBox, QComboBox)
 from matplotlib.backends.backend_qt5agg import (FigureCanvasQTAgg as FigureCanvas)
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolBar
 from matplotlib.figure import Figure
-import json
-import numpy as np
-# import datetime
 
 import mapPlot
-from algorithm import *
-from ProcessThread import processThread
+from const import constNum
+from ProcessThread import processThread, downloadThread
+from DataModule import strAddZero, saveData
 
 
 class MainWindow(QMainWindow):
@@ -35,10 +36,15 @@ class MainWindow(QMainWindow):
         self.userName = ""
         self.passwd = ""
         self.monthIdxOfResult = 0
+        self.resTypeIdx = 0
+        self.resultFlag = False
+        self.const = constNum()
         self.boundary = []
         self.timeRange = [[], []]
         self.pThread = processThread()
         self.pThread.signal.connect(self._callback)
+        self.dThread = downloadThread()
+        self.dThread.signal.connect(self._downloadCallback)
         self.filenames = [[], []]
         self.variables = ['VTM02', 'VSDX', 'VSDY', 'VHM0', 'zos']
         self.setWindowTitle('Ocean energy helper')
@@ -55,10 +61,12 @@ class MainWindow(QMainWindow):
         item.setPath(path)
         item.accept()
 
-    def _strAddZero(self, timeStr):
-        if len(timeStr) < 2:
-            timeStr = '0' + timeStr
-        return timeStr
+    def _loadConfig(self):
+        configFile, _ = QFileDialog.getOpenFileName(
+            self, 'load config file', '')
+        self.const.readFile(configFile)
+        self.textBrowser2.append("load config file: " + configFile)
+        self.statusBar.showMessage("Config")
 
     def _openMenu(self):
         self.workspacePath = QFileDialog.getExistingDirectory(
@@ -70,22 +78,26 @@ class MainWindow(QMainWindow):
         self.statusBar.showMessage("Quit")
 
     def _saveMenu(self):
+        if not self.resultFlag:
+            self._alertMsg(4, "Check the result!")
+            return
+        saveData(self.workspacePath + "/res/", self.oceanEnergy)
         self.statusBar.showMessage("Save")
 
     def _checkArea(self):
         if not self.boundary or len(self.boundary) != 4:
             self._alertMsg(3, "Set boundary!")
             return False
-        if self.boundary[0][0] > MAX_LAT or self.boundary[2][0] < MIN_LAT or \
-                self.boundary[0][1] < MIN_LON or self.boundary[1][1] > MAX_LON:
+        if self.boundary[0][0] > self.const.MAX_LAT or self.boundary[2][0] < self.const.MIN_LAT or \
+                self.boundary[0][1] < self.const.MIN_LON or self.boundary[1][1] > self.const.MAX_LON:
             self._alertMsg(3, "Boundary invalid!")
             return False
 
-        dx = (self.boundary[0][0] - self.boundary[2][0]) / 180 * math.pi * EARTH_RADIUS / 1e3
-        dy = (self.boundary[1][1] - self.boundary[0][1]) / 180 * math.pi * EARTH_RADIUS * \
+        dx = (self.boundary[0][0] - self.boundary[2][0]) / 180 * math.pi * self.const.EARTH_RADIUS / 1e3
+        dy = (self.boundary[1][1] - self.boundary[0][1]) / 180 * math.pi * self.const.EARTH_RADIUS * \
              math.cos(self.boundary[0][0] / 180 * math.pi) / 1e3
         area = dx * dy
-        if area > AREA_LIMIT:
+        if area > self.const.AREA_LIMIT:
             self._alertMsg(3, "Area too large!")
         return True
 
@@ -93,15 +105,30 @@ class MainWindow(QMainWindow):
         if not start or not end:
             self._alertMsg(2, "Check time input!")
             return False
-        startLimit = datetime.date(PRODUCT_START_YEAR, PRODUCT_START_MONTH, 1)
-        endLimit = datetime.date(today.year, today.month, 1)
-        startDate = datetime.date(start[0], start[1], start[2])
-        endDate = datetime.date(end[0], end[1], end[2])
+        startLimit = datetime.date(self.const.PRODUCT_START_YEAR, self.const.PRODUCT_START_MONTH, 1)
+        endLimit = datetime.date(self.const.today.year, self.const.today.month, 1)
+        try:
+            startDate = datetime.date(start[0], start[1], start[2])
+        except ValueError:
+            self._alertMsg(2, "Check time input!")
+            return False
+        try:
+            endDate = datetime.date(end[0], end[1], end[2])
+        except ValueError:
+            self._alertMsg(2, "Check time input!")
+            return False
         if startDate < startLimit or endDate > endLimit or startDate >= endDate:
             self._alertMsg(2, "Time exceeds limit!")
             return False
         if not middle == []:
-            middleDate = datetime.date(middle[0], middle[1], middle[2])
+            try:
+                middleDate = datetime.date(middle[0], middle[1], middle[2])
+            except ValueError:
+                self._alertMsg(2, "Check time input!")
+                return False
+            if not 0 <= middle[3] <= 23:
+                self._alertMsg(2, "Check time input!")
+                return False
             if middleDate < startDate or middleDate > endDate:
                 self._alertMsg(2, "Time exceeds limit!")
                 return False
@@ -110,54 +137,29 @@ class MainWindow(QMainWindow):
     def _download(self):
         if not self._checkArea():
             return
+        if self.workspacePath == "":
+            self._alertMsg(1, "Check workspace path!")
+            return
         if not self.timeRange:
             self._alertMsg(2, "Check time input!")
             return
         if not self._checkTime(self.timeRange[0], self.timeRange[1], []):
             return
         monthCnt = (self.timeRange[1][0] - self.timeRange[0][0]) * 12 + self.timeRange[1][1] - self.timeRange[0][1]
-        self.workspacePath = "./workspace/"
         self.userName = "czhang17"
         self.passwd = "410302xyzZCY!"
-        dataPath = self.workspacePath + "/data/"
-        for monIdx in range(monthCnt):
-            year = self.timeRange[0][0] + int(monIdx / 12)
-            nextYear = self.timeRange[0][0] + int((monIdx + 1) / 12)
-            currMon = (self.timeRange[0][1] + monIdx) % 12
-            nextMon = (currMon + 1) % 12
-            if currMon == 0:
-                currMon = 12
-            currMon = self._strAddZero(str(currMon))
-            if nextMon == 0:
-                nextMon = 12
-            nextMon = self._strAddZero(str(nextMon))
-            cmdLine = "python -m motuclient --motu https://nrt.cmems-du.eu/motu-web/Motu --service-id " \
-                      "NORTHWESTSHELF_ANALYSIS_FORECAST_WAV_004_014-TDS --product-id MetO-NWS-WAV-hi" \
-                      + " --longitude-min " + str(self.boundary[0][1]) + " --longitude-max " + str(self.boundary[1][1])\
-                      + " --latitude-min " + str(self.boundary[2][0]) + " --latitude-max " + str(self.boundary[0][0]) \
-                      + " --date-min \"" + str(year) + "-" + currMon + "-01 00:00:00\"" \
-                        " --date-max \"" + str(nextYear) + "-" + str(nextMon) + "-01 00:00:00\"" \
-                        " --variable VHM0 --variable VSDX --variable VSDY --variable VTM02" \
-                        " --out-dir " + dataPath + " --out-name MetO-NWS-WAV-" + str(year) + "-" + str(currMon) + ".nc"\
-                        " --user " + self.userName + " --pwd " + self.passwd
-            self.textBrowser2.append("Downloading " + str(year) + "-" + currMon)
-            downMsg = popen(cmdLine).read()
-            self.textBrowser2.append(downMsg)
-            cmdLine = "python -m motuclient --motu https://nrt.cmems-du.eu/motu-web/Motu --service-id " \
-                      "NORTHWESTSHELF_ANALYSIS_FORECAST_PHY_004_013-TDS --product-id MetO-NWS-PHY-hi-SSH" \
-                      + " --longitude-min " + str(self.boundary[0][1]) + " --longitude-max " + str(self.boundary[1][1])\
-                      + " --latitude-min " + str(self.boundary[2][0]) + " --latitude-max " + str(self.boundary[0][0]) \
-                      + " --date-min \"" + str(year) + "-" + currMon + "-01 00:00:00\"" \
-                        " --date-max \"" + str(nextYear) + "-" + str(nextMon) + "-01 00:00:00\"" \
-                      " --variable zos" \
-                        " --out-dir " + dataPath + " --out-name MetO-NWS-PHY-hi-SSH-" + str(year) + "-" + str(currMon) + ".nc"\
-                        " --user " + self.userName + " --pwd " + self.passwd
-            self.textBrowser2.append("Downloading " + str(year) + "-" + currMon)
-            downMsg = popen(cmdLine).read()
-            self.textBrowser2.append(downMsg)
-            self.textBrowser2.append(str(year) + "-" + currMon + "download finished")
-            self.textBrowser2.append("\n")
-            # print(cmdLine)
+        # dataPath = self.workspacePath + "/data/"
+        self.dThread.monthCnt = monthCnt
+        self.dThread.timeRange = self.timeRange
+        self.dThread.boundary = self.boundary
+        self.dThread.workspacePath = self.workspacePath
+        self.dThread.userName = self.userName
+        self.dThread.passwd = self.passwd
+        self.dThread.start()
+        self.statusBar.showMessage("Downloading")
+
+    def _downloadCallback(self, msg):
+        self.textBrowser2.append(msg)
 
     def _setAreaMenu(self):
         boundary_json = open("boundary.geojson", "rb")
@@ -200,9 +202,9 @@ class MainWindow(QMainWindow):
             return
         self.textBrowser2.append("Set time range successfully")
         self.textBrowser2.append("Begin time: " + self.inputBeginYear.text() + "-" +
-                                 self._strAddZero(self.inputBeginMonth.text()) + "-01 00:00:00")
+                                 strAddZero(self.inputBeginMonth.text()) + "-01 00:00:00")
         self.textBrowser2.append("End time:   " + self.inputEndYear.text() + "-" +
-                                 self._strAddZero(self.inputEndMonth.text()) + "-01 00:00:00\n")
+                                 strAddZero(self.inputEndMonth.text()) + "-01 00:00:00\n")
         self.statusBar.showMessage("set time range")
 
     def _defaultTime(self):
@@ -217,7 +219,7 @@ class MainWindow(QMainWindow):
         self.statusBar.showMessage("Default time")
 
     def _clearAll(self):
-        self.map = mapPlot.map_init()
+        self.map = mapPlot.map_init(self.const.MAX_LAT, self.const.MIN_LON, self.const.MIN_LAT, self.const.MAX_LON)
         self.browser.load(self.url)
         self.boundary = []
 
@@ -231,13 +233,16 @@ class MainWindow(QMainWindow):
         if not self._checkData(True):
             return
         self.pThread.filenames = self.filenames
+        self.pThread.const = self.const
         time.sleep(1)
+        self.resultFlag = False
         self.pThread.start()
 
         self.statusBar.showMessage("Process")
 
     def _callback(self, energyList):
         self.oceanEnergy = energyList
+        self.resultFlag = True
         # print
         self.textBrowser.append('current power plant: [' + str(self.oceanEnergy[0].optSite[1][1]) + ', ' +
                                 str(self.oceanEnergy[0].optSite[1][0]) + ']')
@@ -253,7 +258,8 @@ class MainWindow(QMainWindow):
                                 str(self.oceanEnergy[2].optSite[1][0]) + ']')
         self.textBrowser.append('average tidal power: ' + str(np.average(self.oceanEnergy[2].timeSeries)) + ' W/m^2\n')
 
-        self._plotResult(2, -1)
+        # self._plotResult(self.resTypeIdx, -1)
+        self._setResType()
 
     def _setStatusBar(self):
         self.statusBar = QStatusBar()
@@ -265,19 +271,21 @@ class MainWindow(QMainWindow):
         editMenu = self.menuBar.addMenu("Edit")
         toolMenu = self.menuBar.addMenu("Tool")
         fileMenu.addAction("Open", self._openMenu)
+        fileMenu.addAction("Config", self._loadConfig)
         fileMenu.addAction("Save", self._saveMenu)
-        fileMenu.addAction("Quit", self._quitMenu)
-        fileMenu.addAction("Download", self._download)
+        fileMenu.addAction("Quit", QCoreApplication.quit)
+        # fileMenu.addAction("Download", self._download)
         editMenu.addAction("Set area", self._setAreaMenu)
         editMenu.addAction("Default area", self._defaultAreaMenu)
         editMenu.addAction("Set time", self._setTimeRange)
         editMenu.addAction("Default time", self._defaultTime)
         editMenu.addAction("Clear", self._clearAll)
+        toolMenu.addAction("Download", self._download)
         toolMenu.addAction("Process", self._processMenu)
         self.setMenuBar(self.menuBar)
 
     def _setMapView(self):
-        self.map = mapPlot.map_init()
+        self.map = mapPlot.map_init(self.const.MAX_LAT, self.const.MIN_LON, self.const.MIN_LAT, self.const.MAX_LON)
         self.browser = QWebEngineView()
         currPath = os.path.dirname(__file__).replace("\\", "/")
         self.url = QtCore.QUrl(currPath + "/fareo_map.html")
@@ -286,43 +294,23 @@ class MainWindow(QMainWindow):
     def _setText(self):
         # begin time and end time
         self.inputBeginYear = QLineEdit(self)
-        self.inputBeginYear.setValidator(QIntValidator(PRODUCT_START_YEAR, PRODUCT_END_YEAR, self))
+        self.inputBeginYear.setValidator(QIntValidator(self.const.PRODUCT_START_YEAR, self.const.PRODUCT_END_YEAR, self))
         self.inputBeginMonth = QLineEdit(self)
         self.inputBeginMonth.setValidator(QIntValidator(1, 12, self))
-        # self.inputBeginDay = QLineEdit(self)
-        # self.inputBeginDay.setValidator(QIntValidator(1, 31, self))
-        # self.inputBeginHour = QLineEdit(self)
-        # self.inputBeginHour.setValidator(QIntValidator(0, 23, self))
         self.inputEndYear = QLineEdit(self)
-        self.inputEndYear.setValidator(QIntValidator(PRODUCT_START_YEAR, PRODUCT_END_YEAR, self))
+        self.inputEndYear.setValidator(QIntValidator(self.const.PRODUCT_START_YEAR, self.const.PRODUCT_END_YEAR, self))
         self.inputEndMonth = QLineEdit(self)
         self.inputEndMonth.setValidator(QIntValidator(1, 12, self))
-        # self.inputEndDay = QLineEdit(self)
-        # self.inputEndDay.setValidator(QIntValidator(1, 31, self))
-        # self.inputEndHour = QLineEdit(self)
-        # self.inputEndHour.setValidator(QIntValidator(0, 23, self))
 
         # raw data show time
         self.rawDataYear = QLineEdit(self)
-        self.rawDataYear.setValidator(QIntValidator(PRODUCT_START_YEAR, PRODUCT_END_YEAR, self))
+        self.rawDataYear.setValidator(QIntValidator(self.const.PRODUCT_START_YEAR, self.const.PRODUCT_END_YEAR, self))
         self.rawDataMonth = QLineEdit(self)
         self.rawDataMonth.setValidator(QIntValidator(1, 12, self))
         self.rawDataDay = QLineEdit(self)
         self.rawDataDay.setValidator(QIntValidator(1, 31, self))
         self.rawDataHour = QLineEdit(self)
         self.rawDataHour.setValidator(QIntValidator(0, 23, self))
-        # self.rawDataType = QLineEdit(self)
-
-        # result show time
-        # self.resYear = QLineEdit(self)
-        # self.resYear.setValidator(QIntValidator(PRODUCT_START_YEAR, PRODUCT_END_YEAR, self))
-        # self.resMonth = QLineEdit(self)
-        # self.resMonth.setValidator(QIntValidator(1, 12, self))
-        # self.resDay = QLineEdit(self)
-        # self.resDay.setValidator(QIntValidator(1, 31, self))
-        # self.resHour = QLineEdit(self)
-        # self.resHour.setValidator(QIntValidator(0, 23, self))
-        # self.resType = QLineEdit(self)
 
         # message and summary
         self.textBrowser = QTextBrowser(self)
@@ -364,16 +352,6 @@ class MainWindow(QMainWindow):
         hboxInputTimeCtrl.addWidget(self.inputEndYear)
         hboxInputTimeCtrl.addWidget(QLabel('month'))
         hboxInputTimeCtrl.addWidget(self.inputEndMonth)
-        # hboxInputBeginCtrl.addWidget(QLabel('day'))
-        # hboxInputBeginCtrl.addWidget(self.inputBeginDay)
-        # hboxInputBeginCtrl.addWidget(QLabel('hour'))
-        # hboxInputBeginCtrl.addWidget(self.inputBeginHour)
-
-        # hboxInputEndCtrl = QHBoxLayout()
-        # hboxInputEndCtrl.addWidget(QLabel('day'))
-        # hboxInputEndCtrl.addWidget(self.inputEndDay)
-        # hboxInputEndCtrl.addWidget(QLabel('hour'))
-        # hboxInputEndCtrl.addWidget(self.inputEndHour)
 
         self.rawDataShowBtn = QPushButton(self)
         self.rawDataShowBtn.setText('show')
@@ -383,9 +361,7 @@ class MainWindow(QMainWindow):
         self.comBox.addItems(['VTM02', 'VSDX', 'VSDY', 'VHM0', 'zos'])
 
         hboxRawDataCtrl = QHBoxLayout()
-        # hboxRawDataCtrl.addWidget(QLabel('param'))
         hboxRawDataCtrl.addWidget(self.comBox)
-        # hboxRawDataCtrl.addWidget(self.rawDataType)
         hboxRawDataCtrl.addWidget(QLabel('year'))
         hboxRawDataCtrl.addWidget(self.rawDataYear)
         hboxRawDataCtrl.addWidget(QLabel('month'))
@@ -398,7 +374,6 @@ class MainWindow(QMainWindow):
         vbox1 = QVBoxLayout()
 
         vbox1.addLayout(hboxInputTimeCtrl)
-        # vbox1.addLayout(hboxInputEndCtrl)
         vbox1.addWidget(self.browser)
         vbox1.addLayout(hboxRawDataCtrl)
         vbox1.addWidget(self.dynamic_canvas1)
@@ -413,19 +388,7 @@ class MainWindow(QMainWindow):
         self.resNextBtn = QPushButton(self)
         self.resNextBtn.setText('next')
         self.resNextBtn.clicked.connect(self._setNextEpoch)
-
-        # self.resShowMonthBtn = QRadioButton('Monthly')
-        # self.resShowMonthBtn.setChecked(True)
-        # self.resShowMonthBtn.toggled.connect(self._setTimeResolution)
-        # self.resShowDayBtn = QRadioButton('Daily  ')
-        # self.resShowDayBtn.toggled.connect(self._setTimeResolution)
-        # self.resShowHourBtn = QRadioButton('Hourly ')
-        # self.resShowHourBtn.toggled.connect(self._setTimeResolution)
-        # timeBtnGrp = QButtonGroup(self.centralWidget)
-        # timeBtnGrp.addButton(self.resShowMonthBtn)
-        # timeBtnGrp.addButton(self.resShowDayBtn)
-        # timeBtnGrp.addButton(self.resShowHourBtn)
-
+        # single selection
         self.resTypeBtn1 = QRadioButton('Tidal energy')
         self.resTypeBtn1.setChecked(True)
         self.resTypeBtn1.toggled.connect(self._setResType)
@@ -438,23 +401,7 @@ class MainWindow(QMainWindow):
         typeBtnGrp.addButton(self.resTypeBtn2)
         typeBtnGrp.addButton(self.resTypeBtn3)
 
-        hboxResShowBtn1 = QHBoxLayout()
-        # hboxResShowBtn.addWidget(QLabel('type'))
-        # hboxResShowBtn.addWidget(self.resType)
-        # hboxResShowBtn1.addWidget(QLabel('year '))
-        # hboxResShowBtn1.addWidget(self.resYear)
-        # hboxResShowBtn1.addWidget(QLabel('month'))
-        # hboxResShowBtn1.addWidget(self.resMonth)
-        # hboxResShowBtn1.addWidget(self.resShowMonthBtn)
-        # hboxResShowBtn1.addWidget(self.resShowDayBtn)
-        # hboxResShowBtn1.addWidget(self.resShowHourBtn)
-        # hboxResShowBtn1.addWidget(self.resPrevBtn)
-
         hboxResShowBtn2 = QHBoxLayout()
-        # hboxResShowBtn2.addWidget(QLabel('day  '))
-        # hboxResShowBtn2.addWidget(self.resDay)
-        # hboxResShowBtn2.addWidget(QLabel('hour '))
-        # hboxResShowBtn2.addWidget(self.resHour)
         hboxResShowBtn2.addWidget(self.resTypeBtn1)
         hboxResShowBtn2.addWidget(self.resTypeBtn2)
         hboxResShowBtn2.addWidget(self.resTypeBtn3)
@@ -462,7 +409,6 @@ class MainWindow(QMainWindow):
         hboxResShowBtn2.addWidget(self.resNextBtn)
 
         vbox2 = QVBoxLayout()
-        # vbox2.addLayout(hboxResShowBtn1)
         vbox2.addLayout(hboxResShowBtn2)
         vbox2.addWidget(self.dynamic_canvas2)
         vbox2.addWidget(self.figToolBar2)
@@ -495,27 +441,46 @@ class MainWindow(QMainWindow):
         self.centralWidget.setLayout(hbox)
         self.setCentralWidget(self.centralWidget)
 
-    def _setTimeResolution(self):
-        a = 0
-
     def _setNextEpoch(self):
+        if not self.resultFlag:
+            self._alertMsg(6, "No valid result")
+            return
         if self.monthIdxOfResult + 1 >= len(self.oceanEnergy[0].monPowerMap):
             self._alertMsg(5, 'No next epoch!')
             return
         self.monthIdxOfResult = self.monthIdxOfResult + 1
-        self._plotResult(2, self.monthIdxOfResult)
+        self._plotResult(self.resTypeIdx, self.monthIdxOfResult)
 
     def _setPrevEpoch(self):
+        if not self.resultFlag:
+            self._alertMsg(6, "No valid result")
+            return
         if self.monthIdxOfResult - 1 < -1:
             self._alertMsg(5, 'No previous epoch!')
             return
         self.monthIdxOfResult = self.monthIdxOfResult - 1
-        self._plotResult(2, self.monthIdxOfResult)
+        self._plotResult(self.resTypeIdx, self.monthIdxOfResult)
 
     def _setResType(self):
-        a = 0
+        if not self.resultFlag:
+            self._alertMsg(6, "No valid result")
+            return
+        if self.resTypeBtn1.isChecked():
+            self.textBrowser2.append("output tidal energy")
+            self.resTypeIdx = 0
+        elif self.resTypeBtn2.isChecked():
+            self.textBrowser2.append("output wave energy")
+            self.resTypeIdx = 1
+        else:
+            self.textBrowser2.append("output current energy")
+            self.resTypeIdx = 2
+        self._plotResult(self.resTypeIdx, -1)
 
     def _alertMsg(self, errorNum, errorMsg):
+        """
+        :param errorNum: 1-directory error; 2-date error; 3-boundary; 4-dataset error; 5-process error; 6-visualization
+        :param errorMsg: string
+        """
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Critical)
         msg.setText("Error type: " + str(errorNum))
@@ -564,7 +529,6 @@ class MainWindow(QMainWindow):
     def _dataVisualization(self):
         if not self._checkData(False):
             return
-
         param = self.comBox.currentText()
         year = self.rawDataYear.text()
         month = self.rawDataMonth.text()
@@ -575,12 +539,12 @@ class MainWindow(QMainWindow):
             self._alertMsg(2, "Check time input!")
             return
 
-        if not self._checkTime(self.timeRange[0], self.timeRange[1], [int(year), int(month), 15, 0, 0, 0]):
+        if not self._checkTime(self.timeRange[0], self.timeRange[1], [int(year), int(month), int(day), int(hour), 0, 0]):
             return
 
-        month = self._strAddZero(month)
-        day = self._strAddZero(day)
-        hour = self._strAddZero(hour)
+        month = strAddZero(month)
+        day = strAddZero(day)
+        hour = strAddZero(hour)
 
         latParamName = 'lat'
         lonParamName = 'lon'
@@ -637,17 +601,17 @@ class MainWindow(QMainWindow):
         if not self.resultColorBar == '':
             self.resultColorBar.remove()
         self._dynamic_ax3.clear()
-        if typeIdx == 0:
-            title0 = 'Current energy distribution [W/m^2] '
+        if typeIdx == 2:
+            title0 = 'Current energy distribution '
             title2 = ' [W/m^2]'
             title = 'Current energy time series'
             yLabel = 'power [W/m^2]'
         elif typeIdx == 1:
-            title0 = 'Wave energy distribution [kW/m] '
+            title0 = 'Wave energy distribution '
             title2 = ' [kW/m]'
             title = 'Wave energy time series'
             yLabel = 'power [kW/m]'
-        elif typeIdx == 2:
+        elif typeIdx == 0:
             title0 = 'Tidal energy distribution '
             title2 = ' [W/m^2]'
             title = 'Tidal energy time series'
@@ -656,7 +620,11 @@ class MainWindow(QMainWindow):
             self._alertMsg(4, 'Data type error!')
             return
         # plot time series
-        self._dynamic_ax3.plot(self.oceanEnergy[typeIdx].timeIdx, self.oceanEnergy[typeIdx].timeSeries, marker='.')
+        if typeIdx == 1:
+            self._dynamic_ax3.plot(self.oceanEnergy[typeIdx].timeIdx,
+                                   np.array(self.oceanEnergy[typeIdx].timeSeries) / 1000, marker='.')
+        else:
+            self._dynamic_ax3.plot(self.oceanEnergy[typeIdx].timeIdx, self.oceanEnergy[typeIdx].timeSeries, marker='.')
         self._dynamic_ax3.set_title(title)
         self._dynamic_ax3.set_xlabel('time [day]')
         self._dynamic_ax3.set_ylabel(yLabel)
@@ -666,10 +634,16 @@ class MainWindow(QMainWindow):
         # plot distribution map
         lon, lat = np.meshgrid(self.oceanEnergy[typeIdx].lon, self.oceanEnergy[typeIdx].lat)
         if monthIdx == -1:
-            c = self._dynamic_ax2.pcolor(lon, lat, self.oceanEnergy[typeIdx].totalPowerMap)
+            if typeIdx == 1:
+                c = self._dynamic_ax2.pcolor(lon, lat, self.oceanEnergy[typeIdx].totalPowerMap / 1000)
+            else:
+                c = self._dynamic_ax2.pcolor(lon, lat, self.oceanEnergy[typeIdx].totalPowerMap)
             title1 = 'average'
         else:
-            c = self._dynamic_ax2.pcolor(lon, lat, self.oceanEnergy[typeIdx].monPowerMap[monthIdx])
+            if typeIdx == 1:
+                c = self._dynamic_ax2.pcolor(lon, lat, self.oceanEnergy[typeIdx].monPowerMap[monthIdx] / 1000)
+            else:
+                c = self._dynamic_ax2.pcolor(lon, lat, self.oceanEnergy[typeIdx].monPowerMap[monthIdx])
             title1 = self.filenames[0][monthIdx][-10:-3]
         self._dynamic_ax2.set_title(title0 + title1 + title2)
         self._dynamic_ax2.set_xlabel('lon [deg]')
@@ -678,21 +652,3 @@ class MainWindow(QMainWindow):
         self._dynamic_ax2.scatter(self.oceanEnergy[typeIdx].optSite[1][1], self.oceanEnergy[typeIdx].optSite[1][0],
                                   marker='^')
         self._dynamic_ax2.figure.canvas.draw()
-
-        # # plot
-        # lon, lat = np.meshgrid(lon, lat)
-        # plt.figure()
-        # plt.pcolor(lon, lat, currentEnergy.totalPowerMap)
-        # plt.colorbar()
-        # plt.scatter(currentEnergy.optSite[1][1], currentEnergy.optSite[1][0], marker='^')
-        # plt.title('Current energy distribution map [W/m^2]')
-        # plt.xlabel('lon [deg]')
-        # plt.ylabel('lat [deg]')
-       #
-        # plt.figure()
-        # plt.pcolor(lon, lat, wavePotential.totalPowerMap / 1000)
-        # plt.colorbar()
-        # plt.scatter(wavePotential.optSite[1][1], wavePotential.optSite[1][0], marker='^')
-        # plt.title('Wave energy distribution map [kW/m]')
-        # plt.xlabel('lon [deg]')
-        # plt.ylabel('lat [deg]')

@@ -1,5 +1,5 @@
-import numpy as np
 import xarray as xr
+from const import constNum
 
 
 class DataStruct:
@@ -25,5 +25,11 @@ def readData(filePath, param):
     return data
 
 
-def saveDate(path, data):
+def strAddZero(timeStr):
+    if len(timeStr) < 2:
+        timeStr = '0' + timeStr
+    return timeStr
+
+
+def saveData(path, data):
     a = 0

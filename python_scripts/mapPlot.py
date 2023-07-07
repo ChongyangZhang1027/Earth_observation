@@ -1,6 +1,6 @@
 import folium
 from folium.plugins import Draw, MousePosition
-from const import *
+from const import constNum
 
 
 def plot_point(lat, lng):
@@ -15,7 +15,7 @@ def plot_point(lat, lng):
     fareo_map.save('fareo_map.html')
 
 
-def map_init():
+def map_init(MAX_LAT, MIN_LON, MIN_LAT, MAX_LON):
     # position of fareo island: 62, -6.783333
     # Create map and display it
     fareo_map = folium.Map(location=[62, -6.78], zoom_start=8)
