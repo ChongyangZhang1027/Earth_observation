@@ -1,14 +1,13 @@
 import os.path
-import datetime
+from datetime import date
 from xarray import open_dataset
 from folium import Rectangle
 import json
 import numpy as np
-from PyQt5.QtCore import QCoreApplication
 
+from PyQt5.QtCore import QCoreApplication, QUrl
 from PyQt5.QtGui import QIntValidator, QIcon
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5 import QtCore
 from PyQt5.QtWidgets import (QTextEdit, QTextBrowser, QWidget, QHBoxLayout, QVBoxLayout, QMenuBar, QMainWindow,
                              QStatusBar, QFileDialog, QLineEdit, QLabel, QPushButton, QRadioButton, QFrame,
                              QButtonGroup, QMessageBox, QComboBox)
@@ -35,7 +34,7 @@ class MainWindow(QMainWindow):
         self.workspacePath = ""
         self.userName = ""
         self.passwd = ""
-        self.monthIdxOfResult = 0
+        self.monthIdxOfResult = -1
         self.resTypeIdx = 0
         self.resultFlag = False
         self.const = constNum()
@@ -107,15 +106,15 @@ class MainWindow(QMainWindow):
         if not start or not end:
             self._alertMsg(2, "Check time input!")
             return False
-        startLimit = datetime.date(self.const.PRODUCT_START_YEAR, self.const.PRODUCT_START_MONTH, 1)
-        endLimit = datetime.date(self.const.today.year, self.const.today.month, 1)
+        startLimit = date(self.const.PRODUCT_START_YEAR, self.const.PRODUCT_START_MONTH, 1)
+        endLimit = date(self.const.today.year, self.const.today.month, 1)
         try:
-            startDate = datetime.date(start[0], start[1], start[2])
+            startDate = date(start[0], start[1], start[2])
         except ValueError:
             self._alertMsg(2, "Check time input!")
             return False
         try:
-            endDate = datetime.date(end[0], end[1], end[2])
+            endDate = date(end[0], end[1], end[2])
         except ValueError:
             self._alertMsg(2, "Check time input!")
             return False
@@ -124,7 +123,7 @@ class MainWindow(QMainWindow):
             return False
         if not middle == []:
             try:
-                middleDate = datetime.date(middle[0], middle[1], middle[2])
+                middleDate = date(middle[0], middle[1], middle[2])
             except ValueError:
                 self._alertMsg(2, "Check time input!")
                 return False
@@ -290,7 +289,7 @@ class MainWindow(QMainWindow):
         self.map = mapPlot.map_init(self.const.MAX_LAT, self.const.MIN_LON, self.const.MIN_LAT, self.const.MAX_LON)
         self.browser = QWebEngineView()
         currPath = os.path.dirname(__file__).replace("\\", "/")
-        self.url = QtCore.QUrl(currPath + "/fareo_map.html")
+        self.url = QUrl(currPath + "/fareo_map.html")
         self.browser.load(self.url)
 
     def _setText(self):

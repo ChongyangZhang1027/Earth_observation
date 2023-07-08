@@ -1,8 +1,8 @@
 import copy
+import numpy as np
+from math import sqrt, cos, pow
 
 from DataModule import *
-import numpy as np
-from math import sqrt, cos, sin, pow
 
 PI = 3.1415926
 
