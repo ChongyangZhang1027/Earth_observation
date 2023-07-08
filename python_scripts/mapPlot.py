@@ -1,6 +1,5 @@
 import folium
 from folium.plugins import Draw, MousePosition
-from const import constNum
 
 
 def plot_point(lat, lng):

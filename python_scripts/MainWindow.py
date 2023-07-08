@@ -1,14 +1,12 @@
-import math
 import os.path
-import time
 import datetime
-import xarray as xr
-import folium
+from xarray import open_dataset
+from folium import Rectangle
 import json
 import numpy as np
 from PyQt5.QtCore import QCoreApplication
 
-from PyQt5.QtGui import QIntValidator
+from PyQt5.QtGui import QIntValidator, QIcon
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import (QTextEdit, QTextBrowser, QWidget, QHBoxLayout, QVBoxLayout, QMenuBar, QMainWindow,
@@ -22,6 +20,8 @@ import mapPlot
 from const import constNum
 from ProcessThread import processThread, downloadThread
 from DataModule import strAddZero, saveData
+
+PI = 3.1415926
 
 
 class MainWindow(QMainWindow):
@@ -53,6 +53,7 @@ class MainWindow(QMainWindow):
         self._setMapView()
         self._setLayout()
         self._setMenuBar()
+        self.setWindowIcon(QIcon('fans.ico'))
         self.browser.page().profile().downloadRequested.connect(
             self._handleDownloadRequest)
 
@@ -94,9 +95,9 @@ class MainWindow(QMainWindow):
             self._alertMsg(3, "Boundary invalid!")
             return False
 
-        dx = (self.boundary[0][0] - self.boundary[2][0]) / 180 * math.pi * self.const.EARTH_RADIUS / 1e3
-        dy = (self.boundary[1][1] - self.boundary[0][1]) / 180 * math.pi * self.const.EARTH_RADIUS * \
-             math.cos(self.boundary[0][0] / 180 * math.pi) / 1e3
+        dx = (self.boundary[0][0] - self.boundary[2][0]) / 180 * PI * self.const.EARTH_RADIUS / 1e3
+        dy = (self.boundary[1][1] - self.boundary[0][1]) / 180 * PI * self.const.EARTH_RADIUS * \
+             np.cos(self.boundary[0][0] / 180 * PI) / 1e3
         area = dx * dy
         if area > self.const.AREA_LIMIT:
             self._alertMsg(3, "Area too large!")
@@ -184,7 +185,7 @@ class MainWindow(QMainWindow):
         for pos in self.boundary:
             self.textBrowser2.append('(' + str(pos[0]) + ',' + str(pos[1]) + ')')
         self.textBrowser2.append("")
-        folium.Rectangle([(62.75, -8), (61, -6)]).add_to(self.map)
+        Rectangle([(62.75, -8), (61, -6)]).add_to(self.map)
         self.map.save("fareo_map.html")
         self.browser.load(self.url)
         self.statusBar.showMessage("Default area")
@@ -235,7 +236,7 @@ class MainWindow(QMainWindow):
             return
         self.pThread.filenames = self.filenames
         self.pThread.const = self.const
-        time.sleep(1)
+        # time.sleep(1)
         self.resultFlag = False
         self.pThread.start()
 
@@ -475,7 +476,7 @@ class MainWindow(QMainWindow):
         else:
             self.textBrowser2.append("output current energy")
             self.resTypeIdx = 2
-        self._plotResult(self.resTypeIdx, -1)
+        self._plotResult(self.resTypeIdx, self.monthIdxOfResult)
 
     def _alertMsg(self, errorNum, errorMsg):
         """
@@ -565,7 +566,7 @@ class MainWindow(QMainWindow):
         if not fileExistFlag:
             self._alertMsg(1, "Check data file!")
             return
-        data_set = xr.open_dataset(fp)
+        data_set = open_dataset(fp)
         time_stamp = year + "-" + str(month) + "-" + str(day) + "T" + str(hour) + ":00:00"
         data = data_set[param].sel(time=time_stamp, method="nearest")
 

@@ -2,17 +2,20 @@ import copy
 
 from DataModule import *
 import numpy as np
-import math
+from math import sqrt, cos, sin, pow
+
+PI = 3.1415926
 
 
 def dilatation(land, rows, cols):
     res = np.zeros([rows, cols])
-    for latIdx in range(rows-2):
-        for lonIdx in range(cols-2):
+    for latIdx in range(rows - 2):
+        for lonIdx in range(cols - 2):
             i = latIdx + 1
             j = lonIdx + 1
-            if land[i, j] or land[i, j-1] or land[i, j+1] or land[i-1, j-1] or land[i-1, j] or land[i-1, j+1] or \
-               land[i+1, j-1] or land[i+1, j] or land[i+1, j+1]:
+            if land[i, j] or land[i, j - 1] or land[i, j + 1] or land[i - 1, j - 1] or land[i - 1, j] or land[
+                i - 1, j + 1] or \
+                    land[i + 1, j - 1] or land[i + 1, j] or land[i + 1, j + 1]:
                 res[i, j] = 1
     return res
 
@@ -26,7 +29,7 @@ def GetLandMask(data, rows, cols, operationCnt):
     originalLandMask = np.copy(landMask)
     for i in range(operationCnt):
         landMask = dilatation(landMask, rows, cols)
-    return originalLandMask, landMask-originalLandMask
+    return originalLandMask, landMask - originalLandMask
 
 
 def CurrPowerMap(filePath, numOfTurbinePerUnit, const):
@@ -60,9 +63,9 @@ def CurrPowerSeries(file, maxIdx, numOfTurbinePerUnit, const):
     for t in range(len(tt)):
         vx = VSDX[t, maxIdx[0], maxIdx[1]]
         vy = VSDY[t, maxIdx[0], maxIdx[1]]
-        velo = math.sqrt(vx ** 2 + vy ** 2)
+        velo = sqrt(vx ** 2 + vy ** 2)
         E_velo = 0.5 * const.SEA_WATER_DENSITY * const.CROSS_AREA_TURBINE_SMALL * const.TURBINE_EFFICIENT * \
-                 math.pow(velo, 3) * numOfTurbinePerUnit * deltaT
+                 pow(velo, 3) * numOfTurbinePerUnit * deltaT
         totalEnergyPerDay = totalEnergyPerDay + E_velo
         if t % 24 == 23:
             timeSeq.append(copy.copy(dayCnt))
@@ -84,8 +87,9 @@ def WavePotentialMap(filePath, numOfTurbinePerUnit, const):
     for i in range(len(tt)):
         Hw = VHM[i, :, :]
         Tw = VTM[i, :, :]
-        E = const.SEA_WATER_DENSITY * (const.GRAVITY**2) * (Hw**2) * Tw * numOfTurbinePerUnit * const.TURBINE_EFFICIENT\
-            * const.WIDTH_OF_GENERATOR / 64 / math.pi * deltaT
+        E = const.SEA_WATER_DENSITY * (const.GRAVITY ** 2) * (
+                    Hw ** 2) * Tw * numOfTurbinePerUnit * const.TURBINE_EFFICIENT \
+            * const.WIDTH_OF_GENERATOR / 64 / PI * deltaT
         totalEnergyPerMonth = totalEnergyPerMonth + E
     return totalEnergyPerMonth / len(tt)
 
@@ -102,13 +106,14 @@ def WavePotentialSeries(file, maxIdx, numOfTurbinePerUnit, const):
     for t in range(len(tt)):
         Hw = VHM[t, maxIdx[0], maxIdx[1]]
         Tw = VTM[t, maxIdx[0], maxIdx[1]]
-        E = const.SEA_WATER_DENSITY * (const.GRAVITY**2) * (Hw**2) * Tw * numOfTurbinePerUnit * const.TURBINE_EFFICIENT\
-            * const.WIDTH_OF_GENERATOR / 64 / math.pi * deltaT
+        E = const.SEA_WATER_DENSITY * (const.GRAVITY ** 2) * (
+                    Hw ** 2) * Tw * numOfTurbinePerUnit * const.TURBINE_EFFICIENT \
+            * const.WIDTH_OF_GENERATOR / 64 / PI * deltaT
         totalEnergyPerDay = totalEnergyPerDay + E
         if t % 24 == 23:
             timeSeq.append(copy.copy(dayCnt))
             dayCnt = dayCnt + 1
-            dailyPowerSeq.append(copy.copy(totalEnergyPerDay/24))
+            dailyPowerSeq.append(copy.copy(totalEnergyPerDay / 24))
             totalEnergyPerDay = 0
     return dailyPowerSeq, timeSeq
 
@@ -129,8 +134,8 @@ def CurrEnergy(fileLists, const):
     tempData = readData(fileLists[0], 'VSDX')
     lat = np.array(readData(fileLists[0], 'latitude'))
     lon = np.array(readData(fileLists[0], 'longitude'))
-    northResolution = const.LAT_RESOLUTION / 180.0 * math.pi * const.EARTH_RADIUS
-    eastResolution = const.LON_RESOLUTION / 180.0 * math.pi * const.EARTH_RADIUS * math.cos(lat[0] / 180.0 * math.pi)
+    northResolution = const.LAT_RESOLUTION / 180.0 * PI * const.EARTH_RADIUS
+    eastResolution = const.LON_RESOLUTION / 180.0 * PI * const.EARTH_RADIUS * cos(lat[0] / 180.0 * PI)
     areaUnit = northResolution * eastResolution
     numOfTurbinePerUnit = int(areaUnit / const.TURBINE_COVER_AREA)
     dilatationCnt = int(const.DISTANCE_LIMIT / max(northResolution, eastResolution))
@@ -162,8 +167,8 @@ def WaveEnergy(fileLists, const):
     tempData = readData(fileLists[0], 'VSDX')
     lat = np.array(readData(fileLists[0], 'latitude'))
     lon = np.array(readData(fileLists[0], 'longitude'))
-    northResolution = const.LAT_RESOLUTION / 180.0 * math.pi * const.EARTH_RADIUS
-    eastResolution = const.LON_RESOLUTION / 180.0 * math.pi * const.EARTH_RADIUS * math.cos(lat[0] / 180.0 * math.pi)
+    northResolution = const.LAT_RESOLUTION / 180.0 * PI * const.EARTH_RADIUS
+    eastResolution = const.LON_RESOLUTION / 180.0 * PI * const.EARTH_RADIUS * cos(lat[0] / 180.0 * PI)
     areaUnit = northResolution * eastResolution
     numOfTurbinePerUnit = int(areaUnit / const.TURBINE_COVER_AREA)
     dilatationCnt = int(const.DISTANCE_LIMIT / max(northResolution, eastResolution))
@@ -216,17 +221,17 @@ def TidalEnergyMap(file, areaUnit, const):
     # calculate tidal peak time according to the pixel found
     peakIdx = []
     peakVal = []
-    for t in range(len(tt)-2):
-        idx = t+1
-        if (SSH[idx, rs, cs] - SSH[idx-1, rs, cs]) * (SSH[idx+1, rs, cs] - SSH[idx, rs, cs]) < 0 \
-                or SSH[idx, rs, cs] == SSH[idx-1, rs, cs]:
+    for t in range(len(tt) - 2):
+        idx = t + 1
+        if (SSH[idx, rs, cs] - SSH[idx - 1, rs, cs]) * (SSH[idx + 1, rs, cs] - SSH[idx, rs, cs]) < 0 \
+                or SSH[idx, rs, cs] == SSH[idx - 1, rs, cs]:
             peakIdx.append(copy.copy(idx))
             peakVal.append(copy.copy(SSH[idx, rs, cs]))
 
     # calculate the tidal energy
     totalEnergyPerMonth = np.zeros([len(lat), len(lon)])
-    for t in range(len(peakIdx)-1):
-        deltaH = np.abs(SSH[peakIdx[t], :, :] - SSH[peakIdx[t+1], :, :])
+    for t in range(len(peakIdx) - 1):
+        deltaH = np.abs(SSH[peakIdx[t], :, :] - SSH[peakIdx[t + 1], :, :])
         E = 0.5 * const.SEA_WATER_DENSITY * const.GRAVITY * areaUnit * np.square(deltaH) * const.DAM_EFFICIENT
         totalEnergyPerMonth = totalEnergyPerMonth + E
 
@@ -246,9 +251,9 @@ def TidalEnergySeries(file, maxIdx, peakIdx, areaUnit, const):
 
     timeSeries = []
     for t in range(len(peakIdx) - 1):
-        deltaH = np.abs(SSH[peakIdx[t], maxIdx[0], maxIdx[1]] - SSH[peakIdx[t+1], maxIdx[0], maxIdx[1]])
+        deltaH = np.abs(SSH[peakIdx[t], maxIdx[0], maxIdx[1]] - SSH[peakIdx[t + 1], maxIdx[0], maxIdx[1]])
         E = 0.5 * const.SEA_WATER_DENSITY * areaUnit * const.GRAVITY * np.square(deltaH) * const.DAM_EFFICIENT
-        timeSeries.append(copy.copy(E / (peakIdx[t+1] - peakIdx[t]) / 3600))
+        timeSeries.append(copy.copy(E / (peakIdx[t + 1] - peakIdx[t]) / 3600))
     return timeSeries, peakIdx[1:]
 
 
@@ -260,9 +265,9 @@ def TidalEnergy(fileLists, const):
     tempData = readData(fileLists[0], 'zos')
     lat = np.array(readData(fileLists[0], 'lat'))
     lon = np.array(readData(fileLists[0], 'lon'))
-    tt = np.array(readData(fileLists[0], 'time'))
-    northResolution = const.LAT_RESOLUTION / 180.0 * math.pi * const.EARTH_RADIUS
-    eastResolution = const.LON_RESOLUTION / 180.0 * math.pi * const.EARTH_RADIUS * math.cos(lat[0] / 180.0 * math.pi)
+    # tt = np.array(readData(fileLists[0], 'time'))
+    northResolution = const.LAT_RESOLUTION / 180.0 * PI * const.EARTH_RADIUS
+    eastResolution = const.LON_RESOLUTION / 180.0 * PI * const.EARTH_RADIUS * cos(lat[0] / 180.0 * PI)
     areaUnit = northResolution * eastResolution
 
     landMask, searchArea = GetLandMask(tempData[0, :, :], len(lat), len(lon), 1)
@@ -285,7 +290,7 @@ def TidalEnergy(fileLists, const):
         timeSeries, timeIdx = TidalEnergySeries(file, maxIdx, tidalPeakIdx[j], 1, const)
         j = j + 1
         tidalEnergy.timeSeries = tidalEnergy.timeSeries + list(timeSeries)
-        tidalEnergy.timeIdx = tidalEnergy.timeIdx + list(np.array(timeIdx)/24 + timeShift)
+        tidalEnergy.timeIdx = tidalEnergy.timeIdx + list(np.array(timeIdx) / 24 + timeShift)
         timeShift = timeShift + len(readData(file, 'time')) / 24
     # tidalEnergy.dailyAvg = tidalEnergy.totalPowerMap[maxIdx[0], maxIdx[1]] / timeShift
     tidalEnergy.dailyAvg = np.average(tidalEnergy.timeSeries)
