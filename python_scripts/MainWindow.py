@@ -569,9 +569,9 @@ class MainWindow(QMainWindow):
         time_stamp = year + "-" + str(month) + "-" + str(day) + "T" + str(hour) + ":00:00"
         data = data_set[param].sel(time=time_stamp, method="nearest")
 
-        self._dynamic_ax1.clear()
         if not self.rawDataColorBar == '':
             self.rawDataColorBar.remove()
+        self._dynamic_ax1.clear()
         lat = data_set[latParamName]
         lon = data_set[lonParamName]
         lon, lat = np.meshgrid(lon, lat)
@@ -598,9 +598,9 @@ class MainWindow(QMainWindow):
         self._dynamic_ax1.figure.canvas.draw()
 
     def _plotResult(self, typeIdx, monthIdx):
-        self._dynamic_ax2.clear()
         if not self.resultColorBar == '':
             self.resultColorBar.remove()
+        self._dynamic_ax2.clear()
         self._dynamic_ax3.clear()
         if typeIdx == 2:
             title0 = 'Current energy distribution '
