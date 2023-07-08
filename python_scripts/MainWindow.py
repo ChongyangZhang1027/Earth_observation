@@ -289,7 +289,7 @@ class MainWindow(QMainWindow):
         self.map = mapPlot.map_init(self.const.MAX_LAT, self.const.MIN_LON, self.const.MIN_LAT, self.const.MAX_LON)
         self.browser = QWebEngineView()
         currPath = os.path.dirname(__file__).replace("\\", "/")
-        self.url = QUrl(currPath + "/fareo_map.html")
+        self.url = QUrl.fromLocalFile(currPath + "/fareo_map.html")
         self.browser.load(self.url)
 
     def _setText(self):
