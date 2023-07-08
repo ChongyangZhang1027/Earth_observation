@@ -1,9 +1,9 @@
-import datetime
+from datetime import date
 
 
 class constNum:
     def __init__(self):
-        self.today = datetime.date.today()
+        self.today = date.today()
         self.EARTH_RADIUS = 6378e3            # [m]
         self.AREA_LIMIT = 5e4                 # [m^2]
         self.MAX_LAT = 62.75                  # [deg], the cover area of Copernicus North Atlantic product

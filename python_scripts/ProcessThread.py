@@ -1,5 +1,6 @@
 from PyQt5.QtCore import QThread, pyqtSignal
 from os import popen
+
 from algorithm import TidalEnergy, WaveEnergy, CurrEnergy
 from DataModule import strAddZero
 
