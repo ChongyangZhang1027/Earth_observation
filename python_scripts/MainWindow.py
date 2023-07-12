@@ -64,6 +64,9 @@ class MainWindow(QMainWindow):
     def _loadConfig(self):
         configFile, _ = QFileDialog.getOpenFileName(
             self, 'load config file', '')
+        if configFile == "":
+            self._alertMsg(1, "Check config file!")
+            return
         self.const.readFile(configFile)
         self.textBrowser2.append("load config file: " + configFile)
         self.statusBar.showMessage("Config")
@@ -71,6 +74,9 @@ class MainWindow(QMainWindow):
     def _openMenu(self):
         self.workspacePath = QFileDialog.getExistingDirectory(
             self, 'set data folder', '')
+        if self.workspacePath == "":
+            self._alertMsg(1, "Check workspace path!")
+            return
         self.textBrowser2.append("workspace path: " + self.workspacePath + '\n')
         self.statusBar.showMessage("Open")
 
@@ -163,9 +169,16 @@ class MainWindow(QMainWindow):
         self.textBrowser2.append(msg)
 
     def _setAreaMenu(self):
-        boundary_json = open("boundary.geojson", "rb")
+        try:
+            boundary_json = open("boundary.geojson", "rb")
+        except FileNotFoundError:
+            self._alertMsg(3, "Check boundary!")
+            return
         jsonObj = json.load(boundary_json)
         boundary_json.close()
+        if not jsonObj["features"]:
+            self._alertMsg(3, "Check boundary!")
+            return
         points = jsonObj["features"][0]["geometry"]["coordinates"][0]
         self.boundary = [[points[1][1], points[1][0]], [points[2][1], points[2][0]],
                          [points[3][1], points[3][0]], [points[0][1], points[0][0]]]
@@ -248,16 +261,16 @@ class MainWindow(QMainWindow):
         self.textBrowser.append('current power plant: [' + str(self.oceanEnergy[0].optSite[1][1]) + ', ' +
                                 str(self.oceanEnergy[0].optSite[1][0]) + ']')
         self.textBrowser.append('average current power: ' + str(np.average(self.oceanEnergy[0].timeSeries)) +
-                                ' W/m^2\n')
+                                ' W\n')
 
         self.textBrowser.append('wave potential power plant: [' + str(self.oceanEnergy[1].optSite[1][1]) + ', ' +
                                 str(self.oceanEnergy[1].optSite[1][0]) + ']')
         self.textBrowser.append('average wave power: ' + str(np.average(self.oceanEnergy[1].timeSeries) / 1000) +
-                                ' kW/m\n')
+                                ' kW\n')
 
         self.textBrowser.append('tidal potential power plant: [' + str(self.oceanEnergy[2].optSite[1][1]) + ', ' +
                                 str(self.oceanEnergy[2].optSite[1][0]) + ']')
-        self.textBrowser.append('average tidal power: ' + str(np.average(self.oceanEnergy[2].timeSeries)) + ' W/m^2\n')
+        self.textBrowser.append('average tidal power: ' + str(np.average(self.oceanEnergy[2].timeSeries)) + ' W\n')
 
         # self._plotResult(self.resTypeIdx, -1)
         self._setResType()
@@ -576,15 +589,15 @@ class MainWindow(QMainWindow):
         lon = data_set[lonParamName]
         lon, lat = np.meshgrid(lon, lat)
         if param == 'VTM02':
-            title = 'Spectral moments (0,2) wave period Tm02'
+            title = 'Spectral moments (0,2) wave period Tm02 [s]'
         elif param == 'VSDX':
-            title = 'Stokes drift U'
+            title = 'Stokes drift U [m/s]'
         elif param == 'VSDY':
-            title = 'Stokes drift V'
+            title = 'Stokes drift V [m/s]'
         elif param == 'VHM0':
-            title = 'Spectral significant wave height (Hm0)'
+            title = 'Spectral significant wave height (Hm0) [m]'
         else:
-            title = 'Sea surface height above geoid'
+            title = 'Sea surface height above geoid [m]'
         self._dynamic_ax1.set_title(title)
         if param == 'zos':
             data = data[0]
@@ -595,6 +608,7 @@ class MainWindow(QMainWindow):
         self._dynamic_ax1.axis('tight')
         self.rawDataColorBar = self.dynamic_canvas1.figure.colorbar(c, ax=self._dynamic_ax1)
         # self.dynamic_canvas1.figure.colorbar(ax=self._dynamic_ax1)
+        self.dynamic_canvas1.figure.tight_layout()
         self._dynamic_ax1.figure.canvas.draw()
 
     def _plotResult(self, typeIdx, monthIdx):
@@ -630,6 +644,7 @@ class MainWindow(QMainWindow):
         self._dynamic_ax3.set_xlabel('time [day]')
         self._dynamic_ax3.set_ylabel(yLabel)
         self._dynamic_ax3.grid()
+        self.dynamic_canvas3.figure.tight_layout()
         self._dynamic_ax3.figure.canvas.draw()
 
         # plot distribution map
@@ -652,4 +667,5 @@ class MainWindow(QMainWindow):
         self.resultColorBar = self.dynamic_canvas2.figure.colorbar(c, ax=self._dynamic_ax2)
         self._dynamic_ax2.scatter(self.oceanEnergy[typeIdx].optSite[1][1], self.oceanEnergy[typeIdx].optSite[1][0],
                                   marker='^')
+        self.dynamic_canvas2.figure.tight_layout()
         self._dynamic_ax2.figure.canvas.draw()
