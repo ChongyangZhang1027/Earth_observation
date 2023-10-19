@@ -2,7 +2,7 @@
 
 This is the group project for Applied Earth Observation course for ESPACE program in TUM. Here we use products int Copernicus Marine service to estimate ocean energy.
 
-### Group member ###
+### Group memnbers ###
 
 * Adil W.
 * Chongyang Zhang
