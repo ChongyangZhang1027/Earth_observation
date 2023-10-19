@@ -1,29 +1,12 @@
 # README #
 
-This README would normally document whatever steps are necessary to get your application up and running.
+This is the group project for Applied Earth Observation course for ESPACE program in TUM. Here we use products int Copernicus Marine service to estimate ocean energy.
 
-### What is this repository for? ###
+### Group member ###
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
-
-### How do I get set up? ###
-
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
-
-### Contribution guidelines ###
-
-* Writing tests
-* Code review
-* Other guidelines
-
-### Who do I talk to? ###
-
-* Repo owner or admin
-* Other community or team contact
+* Adil W.
+* Chongyang Zhang
+* Han Deul Son
+* Ishan Sahni
+* Qingna Li
+* Yile Gan
